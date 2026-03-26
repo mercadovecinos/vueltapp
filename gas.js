@@ -197,7 +197,7 @@ function requestTrip(p) {
 
   try {
     MailApp.sendEmail({
-      to: p.driverEmail,
+      to: driverEmail,
       subject: '🚗 Solicitud de viaje — ' + req.requesterName,
       body: req.requesterName + ' (Parcela ' + req.requesterParcela + ') solicita tu viaje del ' +
         trip.date + ' a las ' + trip.time + '.\nRuta: ' + route + '\n\n' +
@@ -241,7 +241,7 @@ function handleEmailRespond(p) {
   var token = p.token;
   var gasUrl = ScriptApp.getService().getUrl();
 
-  if (p.r === 'reject' && !p.comment) {
+  if (p.r === 'reject' && p.comment === undefined) {
     var html = '<html><meta name="viewport" content="width=device-width"><body style="font-family:-apple-system,sans-serif;max-width:420px;margin:40px auto;padding:20px">' +
       '<h2 style="color:#2c5530">❌ Rechazar solicitud</h2>' +
       '<p style="color:#555;margin-bottom:16px">Agrega un comentario opcional para el pasajero:</p>' +

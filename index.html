@@ -87,6 +87,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 .b-sol{background:#fef3c7;color:#92400e}
 .b-apro{background:#dbeafe;color:#1e40af}
 .b-rech{background:#fee2e2;color:#991b1b}
+.b-past{background:#f3f4f6;color:#6b7280}
 
 /* ── Card ── */
 .card{background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px;box-shadow:var(--sh)}
@@ -288,6 +289,7 @@ var weekOffset = 1;
 var publishState = {};
 var pendingRejectId = null;
 var pendingPayData = null;
+var balancesCache = [];
 var tripsCache = null;
 var pendingRepeatBase = null;
 
@@ -439,10 +441,15 @@ async function completeParcela() {
 }
 
 function logout() {
-  localStorage.removeItem('vu_user');
+  // Limpiar cache para no dejar datos del usuario en el dispositivo
+  Object.keys(localStorage)
+    .filter(function(k){ return k.startsWith('vu_'); })
+    .forEach(function(k){ localStorage.removeItem(k); });
   currentUser = null;
   document.getElementById('main').classList.remove('on');
   document.getElementById('auth').style.display = '';
+  // Re-inicializar botón de Google
+  if (typeof google !== 'undefined' && google.accounts) onGoogleLibraryLoad();
 }
 
 // ── Trips page ──
@@ -502,7 +509,7 @@ function renderTripsList(trips, days, today) {
           html += '<div class="seat' + (i < seatsApproved ? ' taken' : '') + '"></div>';
         }
         var badgeTxt = '', badgeCls = '';
-        if (isPast) { badgeTxt = 'Pasado'; badgeCls = ''; }
+        if (isPast) { badgeTxt = 'Pasado'; badgeCls = 'b-past'; }
         else if (myReq) { badgeTxt = myReq.status; badgeCls = 'b-' + myReq.status.substr(0,4); }
         else if (full) { badgeTxt = 'Lleno'; badgeCls = 'b-rech'; }
         else { badgeTxt = t.availableSeats + ' cupo' + (t.availableSeats > 1 ? 's' : ''); badgeCls = 'b-disp'; }
@@ -645,8 +652,14 @@ async function doPublish() {
     driverId: currentUser.id, driverName: currentUser.name, driverParcela: currentUser.parcela,
     date: date, time: time, direction: publishState.dir, puebloPoint: pueblo, seats: publishState.seats
   };
+  var pubBtn = document.querySelector('#publish-content .btn-p');
+  if (pubBtn) { pubBtn.textContent = 'Publicando…'; pubBtn.disabled = true; }
   var res = await api('addTrip', payload);
-  if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
+  if (res.error) {
+    err.textContent = res.error; err.classList.add('on');
+    if (pubBtn) { pubBtn.textContent = 'Publicar viaje'; pubBtn.disabled = false; }
+    return;
+  }
 
   // Show success + repeat prompt
   renderRepeatPrompt({ dir: publishState.dir, time: time, pueblo: pueblo, seats: publishState.seats, publishedDate: date });
@@ -815,12 +828,13 @@ async function loadBalance() {
 }
 
 function renderBalance(balances) {
+  balancesCache = balances; // guardado globalmente para evitar strings en onclick
   if (balances.length === 0) {
     document.getElementById('balance-content').innerHTML = '<div class="empty"><div class="empty-icon">🎉</div>Todo al día — sin deudas pendientes</div>';
     return;
   }
   var html = '';
-  balances.forEach(function(b) {
+  balances.forEach(function(b, i) {
     var iOwe = b.amount < 0;
     var absAmt = Math.abs(b.amount);
     var fmtAmt = '$' + absAmt.toLocaleString('es-CL');
@@ -829,16 +843,20 @@ function renderBalance(balances) {
     html += '<div style="font-size:.75rem;color:var(--muted);margin-top:2px">' + (iOwe ? 'Les debes' : 'Te deben') + '</div></div>';
     html += '<div style="display:flex;align-items:center;gap:12px">';
     html += '<div class="bal-amt ' + (iOwe ? 'bal-neg' : 'bal-pos') + '">' + fmtAmt + '</div>';
-    html += '<button class="btn btn-g btn-sm" onclick="openPay(\'' + b.userId + '\',\'' + b.name + '\',' + absAmt + ',' + (iOwe ? 'true' : 'false') + ')">Pagado</button>';
+    html += '<button class="btn btn-g btn-sm" onclick="openPay(' + i + ')">Pagado</button>';
     html += '</div></div>';
   });
   document.getElementById('balance-content').innerHTML = html;
 }
 
-function openPay(otherId, otherName, amount, iOwe) {
-  pendingPayData = { otherId: otherId, otherName: otherName, amount: amount, iOwe: iOwe };
-  document.getElementById('pay-title').textContent = iOwe ? 'Pago a ' + otherName : otherName + ' te pagó';
-  document.getElementById('pay-amount').value = amount;
+function openPay(idx) {
+  var b = balancesCache[idx];
+  if (!b) return;
+  var iOwe = b.amount < 0;
+  var absAmt = Math.abs(b.amount);
+  pendingPayData = { otherId: b.userId, otherName: b.name, amount: absAmt, iOwe: iOwe };
+  document.getElementById('pay-title').textContent = iOwe ? 'Pago a ' + b.name : b.name + ' te pagó';
+  document.getElementById('pay-amount').value = absAmt;
   openModal('pay');
 }
 
