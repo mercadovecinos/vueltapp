@@ -284,11 +284,21 @@ var MESES_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov
 
 // ── State ──
 var currentUser = null;
-var weekOffset = 1; // 1 = próxima semana por defecto
-var publishState = {}; // temp state for publish form
+var weekOffset = 1;
+var publishState = {};
 var pendingRejectId = null;
 var pendingPayData = null;
 var tripsCache = null;
+var pendingRepeatBase = null;
+
+// ── Cache (stale-while-revalidate) ──
+var CACHE_TTL = 3 * 60 * 1000; // 3 min
+function cacheKey(s, e) { return 'vu_t_' + s + '_' + e; }
+function getCached(k) {
+  try { var x = JSON.parse(localStorage.getItem(k)); if (x && Date.now()-x.ts < CACHE_TTL) return x.d; } catch(e) {}
+  return null;
+}
+function setCache(k, d) { try { localStorage.setItem(k, JSON.stringify({ts:Date.now(),d:d})); } catch(e) {} }
 
 // ── Init ──
 (function init() {
@@ -439,14 +449,27 @@ function logout() {
 async function loadTrips() {
   var week = getWeekDates(weekOffset);
   var today = toDateStr(new Date());
-  // Label
-  var label = week.start === toDateStr(getWeekDates(0).days[0]) ? 'Esta semana' :
-               weekOffset === 1 ? 'Próxima semana' :
+  var label = weekOffset === 0 ? 'Esta semana' : weekOffset === 1 ? 'Próxima semana' :
                fmtDate(week.start) + ' — ' + fmtDate(week.end);
   document.getElementById('week-label').textContent = label;
-  document.getElementById('trips-list').innerHTML = '<div class="loader">Cargando…</div>';
+
+  // Mostrar cache al instante si existe
+  var ck = cacheKey(week.start, week.end);
+  var cached = getCached(ck);
+  if (cached) {
+    tripsCache = cached;
+    renderTripsList(cached, week.days, today);
+  } else {
+    document.getElementById('trips-list').innerHTML = '<div class="loader">Cargando…</div>';
+  }
+
+  // Fetch en background siempre
   var res = await api('getTrips', { start: week.start, end: week.end });
-  if (res.error) { document.getElementById('trips-list').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div>' + res.error + '</div>'; return; }
+  if (res.error) {
+    if (!cached) document.getElementById('trips-list').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div>' + res.error + '</div>';
+    return;
+  }
+  setCache(ck, res);
   tripsCache = res;
   renderTripsList(res, week.days, today);
 }
@@ -630,39 +653,62 @@ async function doPublish() {
 }
 
 function renderRepeatPrompt(base) {
+  pendingRepeatBase = base; // sin JSON en onclick — evita bug de comillas
   var today = new Date(); today.setHours(0,0,0,0);
   var chips = '';
-  // Next 14 days
   for (var i = 0; i < 14; i++) {
     var d = new Date(today); d.setDate(today.getDate() + i + 1);
     var ds = toDateStr(d);
-    var lbl = DIAS_ES[d.getDay()] + '<br>' + d.getDate() + ' ' + MESES_ES[d.getMonth()];
-    chips += '<div class="dchip" data-date="' + ds + '" onclick="this.classList.toggle(\'on\')">' + lbl + '</div>';
+    // Marcar el día ya publicado como seleccionado y deshabilitado
+    var alreadyPublished = ds === base.publishedDate;
+    var cls = 'dchip' + (alreadyPublished ? ' on disabled' : '');
+    chips += '<div class="' + cls + '" data-date="' + ds + '" onclick="this.classList.toggle(\'on\')">'
+      + DIAS_ES[d.getDay()] + '<br>' + d.getDate() + ' ' + MESES_ES[d.getMonth()] + '</div>';
   }
   var route = base.dir === 'salida' ? 'PBI → ' + base.pueblo : base.pueblo + ' → PBI';
   document.getElementById('publish-content').innerHTML =
-    '<div class="success-anim"><div class="big">✅</div><div style="font-weight:700;margin-top:8px">¡Viaje publicado!</div><div style="font-size:.85rem;color:var(--muted);margin-top:4px">' + route + ' · ' + base.time + ' · ' + base.seats + ' cupo' + (base.seats > 1 ? 's' : '') + '</div></div>' +
+    '<div class="success-anim"><div class="big">✅</div>' +
+    '<div style="font-weight:700;margin-top:8px">¡Viaje publicado!</div>' +
+    '<div style="font-size:.85rem;color:var(--muted);margin-top:4px">' + route + ' · ' + base.time + ' · ' + base.seats + ' cupo' + (base.seats > 1 ? 's' : '') + '</div>' +
+    '<button class="btn btn-o" style="margin-top:16px;width:auto;padding:10px 20px;font-size:.85rem" onclick="goToTripsAtDate(\'' + base.publishedDate + '\')">Ver en la lista →</button>' +
+    '</div>' +
     '<div class="repeat-box">' +
     '<div class="repeat-title">¿Repetir en más días?</div>' +
-    '<div class="repeat-sub">Misma hora, dirección y cupos. Toca los días que quieras agregar.</div>' +
+    '<div class="repeat-sub">Misma hora, dirección y cupos. Toca los días que quieras.</div>' +
     '<div class="days-grid">' + chips + '</div>' +
     '<div class="row-btns">' +
     '<button class="btn btn-g btn-sm" onclick="renderPublishForm()">Nueva diferente</button>' +
-    '<button class="btn btn-p btn-sm" onclick="doRepeatDays(' + JSON.stringify(base) + ')">Agregar días seleccionados</button>' +
+    '<button class="btn btn-p btn-sm" onclick="doRepeatDays()">Agregar días seleccionados</button>' +
     '</div></div>';
 }
 
-async function doRepeatDays(base) {
-  var selected = document.querySelectorAll('.dchip.on');
-  if (selected.length === 0) { toast('Selecciona al menos un día'); return; }
-  var trips = Array.from(selected).map(function(chip) {
+async function doRepeatDays() {
+  var base = pendingRepeatBase;
+  if (!base) return;
+  var selected = Array.from(document.querySelectorAll('.dchip.on:not(.disabled)'));
+  if (selected.length === 0) { toast('Selecciona al menos un día nuevo'); return; }
+  var trips = selected.map(function(chip) {
     return { driverId: currentUser.id, driverName: currentUser.name, driverParcela: currentUser.parcela,
       date: chip.dataset.date, time: base.time, direction: base.dir, puebloPoint: base.pueblo, seats: base.seats };
   });
+  var btn = document.querySelector('.repeat-box .btn-p');
+  if (btn) { btn.textContent = 'Publicando…'; btn.disabled = true; }
   var res = await api('addTrips', { trips: JSON.stringify(trips) });
-  if (res.error) { toast('Error: ' + res.error); return; }
+  if (res.error) { toast('Error: ' + res.error); if (btn) { btn.textContent = 'Agregar días seleccionados'; btn.disabled = false; } return; }
   toast('✅ ' + trips.length + ' viaje' + (trips.length > 1 ? 's' : '') + ' publicado' + (trips.length > 1 ? 's' : ''));
-  renderPublishForm();
+  goToTripsAtDate(trips[0].date);
+}
+
+// Navega a la tab viajes en la semana que contiene esa fecha
+function goToTripsAtDate(dateStr) {
+  var target = new Date(dateStr + 'T12:00:00');
+  var today = new Date(); today.setHours(0,0,0,0);
+  var dow = today.getDay();
+  var monday = new Date(today);
+  monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
+  var diff = Math.floor((target - monday) / (7 * 24 * 3600 * 1000));
+  weekOffset = Math.max(0, diff);
+  showPage('trips');
 }
 
 // ── My Trips page ──
