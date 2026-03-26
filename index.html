@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>vueltapp</title>
+<script src="https://accounts.google.com/gsi/client" async></script>
 <style>
 :root {
   --p:#2c5530; --pl:#4a8c50; --pa:#e8855a; --bg:#f4f0eb; --card:#fff;
@@ -18,12 +19,9 @@ a{color:inherit;text-decoration:none}
 #auth{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 24px}
 .logo{font-size:2.2rem;font-weight:900;color:var(--p);letter-spacing:-1px;margin-bottom:4px}
 .logo em{color:var(--pa);font-style:normal}
-.tagline{color:var(--muted);font-size:.85rem;margin-bottom:32px;text-align:center}
-.tabs{display:flex;background:var(--border);border-radius:10px;padding:4px;width:100%;margin-bottom:24px}
-.tab{flex:1;padding:9px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:.9rem;font-weight:600;color:var(--muted);transition:.15s}
-.tab.on{background:#fff;color:var(--p);box-shadow:0 1px 4px rgba(0,0,0,.12)}
-.tab-pane{width:100%;display:none}
-.tab-pane.on{display:block}
+.tagline{color:var(--muted);font-size:.85rem;margin-bottom:40px;text-align:center}
+.g-btn-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;width:100%}
+.parcela-wrap{width:100%;display:none}
 
 /* ── Forms ── */
 .fg{margin-bottom:14px;width:100%}
@@ -149,30 +147,25 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
   <div class="logo">vuelt<em>app</em></div>
   <div class="tagline">Compartamos el camino al pueblo 🌿</div>
 
-  <div class="tabs">
-    <button class="tab on" onclick="switchTab('login')">Entrar</button>
-    <button class="tab" onclick="switchTab('register')">Registrarse</button>
+  <!-- Google Sign-In -->
+  <div class="g-btn-wrap" id="google-btn-wrap">
+    <div id="google-signin-btn"></div>
+    <div id="auth-err" class="err"></div>
   </div>
 
-  <!-- Login -->
-  <div class="tab-pane on" id="pane-login">
-    <div id="err-login" class="err"></div>
-    <div class="fg"><label>Email</label><input type="email" id="l-email" placeholder="tu@email.com" autocomplete="email"></div>
-    <div class="fg"><label>Contraseña</label><input type="password" id="l-pw" placeholder="••••••••" autocomplete="current-password"></div>
-    <button class="btn btn-p" onclick="doLogin()">Entrar</button>
-  </div>
-
-  <!-- Register -->
-  <div class="tab-pane" id="pane-register">
-    <div id="err-reg" class="err"></div>
-    <div class="fg"><label>Nombre</label><input type="text" id="r-name" placeholder="Tu nombre completo"></div>
-    <div class="fg"><label>Email</label><input type="email" id="r-email" placeholder="tu@email.com" autocomplete="email"></div>
-    <div class="fg"><label>Contraseña</label><input type="password" id="r-pw" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div>
-    <div class="fg">
-      <label>Parcela</label>
-      <select id="r-parcela"><option value="">Selecciona tu parcela…</option></select>
+  <!-- Parcela picker — solo la primera vez -->
+  <div class="parcela-wrap" id="parcela-wrap">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:2rem;margin-bottom:8px">👋</div>
+      <div style="font-weight:800;font-size:1.1rem">¡Bienvenido/a!</div>
+      <div style="color:var(--muted);font-size:.85rem;margin-top:6px">Es tu primera vez — ¿en qué parcela vives?</div>
     </div>
-    <button class="btn btn-p" onclick="doRegister()">Crear cuenta</button>
+    <div class="fg">
+      <label>Tu parcela</label>
+      <select id="p-parcela"><option value="">Selecciona…</option></select>
+    </div>
+    <div id="parcela-err" class="err"></div>
+    <button class="btn btn-p" onclick="completeParcela()">Entrar a vueltapp</button>
   </div>
 </div>
 
@@ -280,9 +273,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 
 <script>
 // ══════════════════════════════════════════════
-// CONFIG — pegar URL del deployment de GAS aquí
+// CONFIG
 // ══════════════════════════════════════════════
 var GAS_URL = 'https://script.google.com/macros/s/AKfycbw6ZwE01qwfbt2LtQLFWLrFeniOkHRU-wPrU8z1n4cLrKC-rCfkkXf6YI-G6ITXS9sC/exec';
+var GOOGLE_CLIENT_ID = 'PEGAR_CLIENT_ID_AQUI';
 
 var PUEBLOS = ['Puerto Varas Entrada Norte','Puerto Varas Entrada Sur','Puerto Varas Centro','Puerto Chico','Nueva Braunau','Llanquihue','Otro'];
 var DIAS_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
@@ -298,17 +292,18 @@ var tripsCache = null;
 
 // ── Init ──
 (function init() {
-  // Populate parcela select
-  var sel = document.getElementById('r-parcela');
-  for (var i = 1; i <= 50; i++) {
-    var o = document.createElement('option');
-    o.value = i; o.textContent = 'Parcela ' + i;
-    sel.appendChild(o);
-  }
   // Restore session
   try { currentUser = JSON.parse(localStorage.getItem('vu_user')); } catch(e) {}
-  if (currentUser) enterApp();
+  if (currentUser) { enterApp(); return; }
+  // GSI se inicializa vía onGoogleLibraryLoad cuando carga el script
 })();
+
+// Llamado automáticamente por el script de Google cuando termina de cargar
+function onGoogleLibraryLoad() {
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredentialResponse, auto_select: false });
+  google.accounts.id.renderButton(document.getElementById('google-signin-btn'),
+    { theme: 'outline', size: 'large', width: 280, locale: 'es', text: 'continue_with' });
+}
 
 // ── API ──
 function api(action, params) {
@@ -336,9 +331,9 @@ function api(action, params) {
   });
 }
 
-async function hashPw(pw) {
-  var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
-  return Array.from(new Uint8Array(buf)).map(function(b) { return b.toString(16).padStart(2,'0'); }).join('');
+function decodeJwt(token) {
+  var b64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+  return JSON.parse(atob(b64));
 }
 
 // ── Helpers ──
@@ -390,14 +385,6 @@ function changeWeek(delta) {
   loadTrips();
 }
 
-function switchTab(which) {
-  document.querySelectorAll('.tab').forEach(function(t, i) {
-    t.classList.toggle('on', (i === 0 && which === 'login') || (i === 1 && which === 'register'));
-  });
-  document.getElementById('pane-login').classList.toggle('on', which === 'login');
-  document.getElementById('pane-register').classList.toggle('on', which === 'register');
-}
-
 function enterApp() {
   document.getElementById('auth').style.display = 'none';
   document.getElementById('main').classList.add('on');
@@ -405,32 +392,36 @@ function enterApp() {
   loadTrips();
 }
 
-// ── Auth ──
-async function doLogin() {
-  var email = document.getElementById('l-email').value.trim();
-  var pw = document.getElementById('l-pw').value;
-  var err = document.getElementById('err-login');
+// ── Auth Google ──
+var pendingGoogle = null;
+
+async function handleCredentialResponse(response) {
+  var payload = decodeJwt(response.credential);
+  var err = document.getElementById('auth-err');
   err.classList.remove('on');
-  if (!email || !pw) { err.textContent = 'Completa todos los campos'; err.classList.add('on'); return; }
-  var hash = await hashPw(pw);
-  var res = await api('login', { email: email, hash: hash });
+  var res = await api('googleAuth', { googleId: payload.sub, email: payload.email, name: payload.name });
   if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
+  if (res.needsParcela) {
+    // Primera vez — pedir parcela
+    pendingGoogle = { googleId: payload.sub, email: payload.email, name: payload.name };
+    document.getElementById('google-btn-wrap').style.display = 'none';
+    var sel = document.getElementById('p-parcela');
+    sel.innerHTML = '<option value="">Selecciona…</option>';
+    for (var i = 1; i <= 50; i++) { sel.innerHTML += '<option value="'+i+'">Parcela '+i+'</option>'; }
+    document.getElementById('parcela-wrap').style.display = 'block';
+    return;
+  }
   currentUser = res.user;
   localStorage.setItem('vu_user', JSON.stringify(currentUser));
   enterApp();
 }
 
-async function doRegister() {
-  var name = document.getElementById('r-name').value.trim();
-  var email = document.getElementById('r-email').value.trim();
-  var pw = document.getElementById('r-pw').value;
-  var parcela = document.getElementById('r-parcela').value;
-  var err = document.getElementById('err-reg');
+async function completeParcela() {
+  var parcela = document.getElementById('p-parcela').value;
+  var err = document.getElementById('parcela-err');
   err.classList.remove('on');
-  if (!name || !email || !pw || !parcela) { err.textContent = 'Completa todos los campos'; err.classList.add('on'); return; }
-  if (pw.length < 6) { err.textContent = 'La contraseña debe tener al menos 6 caracteres'; err.classList.add('on'); return; }
-  var hash = await hashPw(pw);
-  var res = await api('register', { name: name, email: email, hash: hash, parcela: parcela });
+  if (!parcela) { err.textContent = 'Selecciona tu parcela'; err.classList.add('on'); return; }
+  var res = await api('googleAuth', { googleId: pendingGoogle.googleId, email: pendingGoogle.email, name: pendingGoogle.name, parcela: parcela });
   if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
   currentUser = res.user;
   localStorage.setItem('vu_user', JSON.stringify(currentUser));

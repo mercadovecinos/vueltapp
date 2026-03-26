@@ -23,7 +23,7 @@ function getSheet(name) {
   if (!s) {
     s = ss.insertSheet(name);
     var h = {
-      Users:    ['id','name','email','passwordHash','parcela','createdAt'],
+      Users:    ['id','name','email','googleId','parcela','createdAt'],
       Trips:    ['id','driverId','driverName','driverParcela','date','time','direction','puebloPoint','totalSeats','createdAt'],
       Requests: ['id','tripId','driverId','driverEmail','driverName','requesterId','requesterEmail','requesterName','requesterParcela','status','token','driverComment','createdAt','updatedAt'],
       Payments: ['id','fromUserId','toUserId','amount','createdAt']
@@ -78,8 +78,7 @@ function doGet(e) {
   var result;
   try {
     if (action === 'respond')         return handleEmailRespond(p);
-    else if (action === 'register')   result = registerUser(p);
-    else if (action === 'login')      result = loginUser(p);
+    else if (action === 'googleAuth')  result = googleAuth(p);
     else if (action === 'getTrips')   result = getTrips(p);
     else if (action === 'addTrip')    result = addTrip(p);
     else if (action === 'addTrips')   result = addTrips(p);
@@ -105,20 +104,21 @@ function doGet(e) {
 
 // ---- Auth ----
 
-function registerUser(p) {
+function googleAuth(p) {
+  if (!p.googleId || !p.email) return { error: 'Datos de Google incompletos' };
   var users = getRows('Users');
-  if (users.find(function(u){ return u.email === p.email; }))
-    return { error: 'Este email ya está registrado' };
-  var user = { id: uid(), name: p.name, email: p.email, passwordHash: p.hash, parcela: p.parcela, createdAt: new Date().toISOString() };
-  appendRow('Users', user);
-  return { ok: true, user: { id: user.id, name: user.name, email: user.email, parcela: user.parcela } };
-}
-
-function loginUser(p) {
-  var users = getRows('Users');
-  var u = users.find(function(u){ return u.email === p.email && u.passwordHash === p.hash; });
-  if (!u) return { error: 'Email o contraseña incorrectos' };
-  return { ok: true, user: { id: u.id, name: u.name, email: u.email, parcela: u.parcela } };
+  // Buscar por googleId o email
+  var u = users.find(function(u){ return u.googleId === p.googleId || u.email === p.email; });
+  if (u) {
+    // Actualizar googleId si no lo tenía (migración)
+    if (!u.googleId) updateRow('Users', u.id, { googleId: p.googleId });
+    return { ok: true, user: { id: u.id, name: u.name, email: u.email, parcela: u.parcela } };
+  }
+  // Usuario nuevo — necesita parcela
+  if (!p.parcela) return { needsParcela: true };
+  var newUser = { id: uid(), name: p.name, email: p.email, googleId: p.googleId, parcela: p.parcela, createdAt: new Date().toISOString() };
+  appendRow('Users', newUser);
+  return { ok: true, user: { id: newUser.id, name: newUser.name, email: newUser.email, parcela: newUser.parcela } };
 }
 
 // ---- Viajes ----
