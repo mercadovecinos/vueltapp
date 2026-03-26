@@ -60,6 +60,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 .page{display:none;padding:16px 16px 80px}
 .page.on{display:block}
 .page-title{font-size:1.15rem;font-weight:800;margin-bottom:16px}
+.section-title{font-size:.8rem;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:12px;margin-top:4px}
 
 /* ── Week nav ── */
 .week-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
@@ -195,7 +196,6 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 
   <!-- Mis Viajes -->
   <div class="page" id="page-my">
-    <div class="page-title">Mis viajes</div>
     <div id="my-content"><div class="loader">Cargando…</div></div>
   </div>
 
@@ -593,8 +593,8 @@ function renderPublishForm(prefill) {
   var ps = prefill || {};
   var html = '';
   html += '<div class="fg"><label>Dirección</label><div class="dir-grid">';
-  html += '<div class="dbtn' + (ps.dir === 'salida' ? ' on' : '') + '" onclick="selDir(\'salida\',this)">🡒 Salida<br><small style="font-weight:400;font-size:.75rem">PBI → Pueblo</small></div>';
-  html += '<div class="dbtn' + (ps.dir === 'regreso' ? ' on' : '') + '" onclick="selDir(\'regreso\',this)">🡐 Regreso<br><small style="font-weight:400;font-size:.75rem">Pueblo → PBI</small></div>';
+  html += '<div class="dbtn' + (ps.dir === 'salida' ? ' on' : '') + '" onclick="selDir(\'salida\',this)">🛻 Salida<br><small style="font-weight:400;font-size:.75rem">PBI → Pueblo</small></div>';
+  html += '<div class="dbtn' + (ps.dir === 'regreso' ? ' on' : '') + '" onclick="selDir(\'regreso\',this)">🏡 Regreso<br><small style="font-weight:400;font-size:.75rem">Pueblo → PBI</small></div>';
   html += '</div></div>';
   html += '<div class="fg"><label>Punto de encuentro</label><select id="pub-pueblo" onchange="onPuebloChange()">';
   html += '<option value="">Selecciona un punto…</option>';
@@ -738,8 +738,8 @@ function renderMyData(myTrips, myReqs) {
   var html = '';
   var today = toDateStr(new Date());
 
-  // My upcoming published trips
-  html += '<div class="page-title" style="margin-bottom:12px">Mis viajes publicados</div>';
+  html += '<div class="page-title">Mis viajes</div>';
+  html += '<div class="section-title">Publicados por mí</div>';
   var upcoming = Array.isArray(myTrips) ? myTrips.filter(function(t){ return t.date >= today; }) : [];
   upcoming.sort(function(a,b){ return (a.date+a.time).localeCompare(b.date+b.time); });
   if (upcoming.length === 0) {
@@ -773,7 +773,7 @@ function renderMyData(myTrips, myReqs) {
   }
 
   html += '<div class="divider" style="margin:20px 0"></div>';
-  html += '<div class="page-title" style="margin-bottom:12px">Mis solicitudes</div>';
+  html += '<div class="section-title">Mis solicitudes</div>';
   var myReqsList = Array.isArray(myReqs) ? myReqs : [];
   myReqsList.sort(function(a,b) {
     var ad = a.trip ? a.trip.date+a.trip.time : ''; var bd = b.trip ? b.trip.date+b.trip.time : '';

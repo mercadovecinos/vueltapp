@@ -33,6 +33,18 @@ function getSheet(name) {
   return s;
 }
 
+function formatCell(header, val) {
+  if (!(val instanceof Date)) return val;
+  // Sheets convierte 'time' y 'date' a Date objects — hay que revertirlos
+  if (header === 'time') {
+    return ('0'+val.getHours()).slice(-2) + ':' + ('0'+val.getMinutes()).slice(-2);
+  }
+  if (header === 'date') {
+    return val.getFullYear() + '-' + ('0'+(val.getMonth()+1)).slice(-2) + '-' + ('0'+val.getDate()).slice(-2);
+  }
+  return val.toISOString();
+}
+
 function getRows(name) {
   var s = getSheet(name);
   var data = s.getDataRange().getValues();
@@ -40,7 +52,7 @@ function getRows(name) {
   var headers = data[0];
   return data.slice(1).map(function(row) {
     var o = {};
-    headers.forEach(function(h,i){ o[h] = row[i]; });
+    headers.forEach(function(h,i){ o[h] = formatCell(h, row[i]); });
     return o;
   });
 }
