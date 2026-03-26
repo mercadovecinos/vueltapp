@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>vueltapp</title>
+<style>
+:root {
+  --p:#2c5530; --pl:#4a8c50; --pa:#e8855a; --bg:#f4f0eb; --card:#fff;
+  --txt:#1c2118; --muted:#6b7280; --border:#e0dbd4; --danger:#e63946;
+  --r:14px; --sh:0 2px 8px rgba(0,0,0,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;max-width:480px;margin:0 auto}
+a{color:inherit;text-decoration:none}
+
+/* ── Auth ── */
+#auth{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 24px}
+.logo{font-size:2.2rem;font-weight:900;color:var(--p);letter-spacing:-1px;margin-bottom:4px}
+.logo em{color:var(--pa);font-style:normal}
+.tagline{color:var(--muted);font-size:.85rem;margin-bottom:32px;text-align:center}
+.tabs{display:flex;background:var(--border);border-radius:10px;padding:4px;width:100%;margin-bottom:24px}
+.tab{flex:1;padding:9px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:.9rem;font-weight:600;color:var(--muted);transition:.15s}
+.tab.on{background:#fff;color:var(--p);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.tab-pane{width:100%;display:none}
+.tab-pane.on{display:block}
+
+/* ── Forms ── */
+.fg{margin-bottom:14px;width:100%}
+label{display:block;font-size:.75rem;font-weight:700;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+input,select,textarea{width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:var(--r);font-size:1rem;color:var(--txt);background:#fff;outline:none;transition:border .15s;-webkit-appearance:none;appearance:none}
+input:focus,select:focus,textarea:focus{border-color:var(--p)}
+.err{background:#fee2e2;color:#991b1b;padding:10px 14px;border-radius:10px;font-size:.85rem;margin-bottom:12px;display:none}
+.err.on{display:block}
+
+/* ── Buttons ── */
+.btn{display:block;width:100%;padding:14px;border:none;border-radius:var(--r);font-size:1rem;font-weight:700;cursor:pointer;transition:.15s;text-align:center}
+.btn:active{transform:scale(.98)}
+.btn-p{background:var(--p);color:#fff}
+.btn-p:hover{background:#1e4028}
+.btn-o{background:transparent;border:2px solid var(--p);color:var(--p)}
+.btn-a{background:var(--pa);color:#fff}
+.btn-d{background:var(--danger);color:#fff}
+.btn-g{background:var(--border);color:var(--txt)}
+.btn-sm{padding:8px 14px;width:auto;font-size:.82rem;display:inline-block}
+.row-btns{display:flex;gap:8px;margin-top:10px}
+
+/* ── Main ── */
+#main{display:none}
+#main.on{display:block}
+.topbar{background:var(--p);color:#fff;padding:14px 18px 12px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.topbar-logo{font-size:1.25rem;font-weight:900;letter-spacing:-.5px}
+.topbar-logo em{color:var(--pa);font-style:normal}
+.topbar-user{font-size:.75rem;opacity:.8}
+.bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid var(--border);display:flex;z-index:50}
+.ni{flex:1;display:flex;flex-direction:column;align-items:center;padding:10px 0 14px;cursor:pointer;color:var(--muted);font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;border:none;background:transparent;transition:color .15s}
+.ni.on{color:var(--p)}
+.ni-icon{font-size:1.3rem;margin-bottom:2px}
+.ni .badge-dot{width:7px;height:7px;background:var(--pa);border-radius:50%;position:absolute;top:8px;right:calc(50% - 16px)}
+
+/* ── Pages ── */
+.page{display:none;padding:16px 16px 80px}
+.page.on{display:block}
+.page-title{font-size:1.15rem;font-weight:800;margin-bottom:16px}
+
+/* ── Week nav ── */
+.week-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.week-label{font-size:.95rem;font-weight:700;color:var(--p)}
+.wbtn{background:var(--p);color:#fff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:.85rem;font-weight:600}
+
+/* ── Day sections ── */
+.day-sec{margin-bottom:20px}
+.day-lbl{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;padding-left:2px}
+.day-lbl.today{color:var(--pa)}
+
+/* ── Trip cards ── */
+.tcard{background:var(--card);border-radius:var(--r);padding:14px 16px;margin-bottom:8px;box-shadow:var(--sh);border-left:4px solid var(--pl);cursor:pointer;transition:transform .1s}
+.tcard:active{transform:scale(.99)}
+.tcard.mine{border-left-color:var(--pa)}
+.tcard.full{opacity:.65}
+.tc-time{font-size:1.1rem;font-weight:800;color:var(--p)}
+.tc-route{font-size:.9rem;margin:3px 0}
+.tc-driver{font-size:.78rem;color:var(--muted)}
+.tc-seats{display:flex;gap:5px;margin-top:8px;align-items:center}
+.seat{width:13px;height:13px;border-radius:50%;background:var(--pl)}
+.seat.taken{background:var(--border)}
+.tc-badge{margin-left:6px;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:20px}
+.b-disp{background:#d1fae5;color:#065f46}
+.b-sol{background:#fef3c7;color:#92400e}
+.b-apro{background:#dbeafe;color:#1e40af}
+.b-rech{background:#fee2e2;color:#991b1b}
+
+/* ── Card ── */
+.card{background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px;box-shadow:var(--sh)}
+.card-title{font-weight:700;margin-bottom:12px;font-size:.95rem}
+
+/* ── Modal ── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:flex-end;justify-content:center}
+.overlay.on{display:flex}
+.modal{background:#fff;border-radius:20px 20px 0 0;padding:20px 18px 32px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto}
+.mhandle{width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 18px}
+.mtitle{font-size:1.05rem;font-weight:800;margin-bottom:14px}
+
+/* ── Direction picker ── */
+.dir-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.dbtn{padding:12px 8px;border:2px solid var(--border);border-radius:var(--r);background:#fff;cursor:pointer;text-align:center;font-size:.85rem;font-weight:700;color:var(--muted);transition:.15s}
+.dbtn.on{border-color:var(--p);color:var(--p);background:#f0f8f2}
+
+/* ── Seats picker ── */
+.seats-row{display:flex;gap:8px;margin-bottom:14px}
+.sbtn{flex:1;padding:11px 4px;border:2px solid var(--border);border-radius:10px;background:#fff;cursor:pointer;text-align:center;font-size:1rem;font-weight:800;color:var(--muted);transition:.15s}
+.sbtn.on{border-color:var(--p);color:var(--p);background:#f0f8f2}
+
+/* ── Repeat days ── */
+.repeat-box{background:#f0f8f2;border:2px solid var(--pl);border-radius:var(--r);padding:16px;margin-top:16px;text-align:center}
+.repeat-title{font-weight:700;font-size:.95rem;margin-bottom:4px}
+.repeat-sub{font-size:.8rem;color:var(--muted);margin-bottom:14px}
+.days-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:14px}
+.dchip{padding:8px 2px;border:2px solid var(--border);border-radius:8px;background:#fff;cursor:pointer;text-align:center;font-size:.65rem;font-weight:700;color:var(--muted);transition:.15s}
+.dchip.on{border-color:var(--p);color:var(--p);background:#f0f8f2}
+.dchip.disabled{opacity:.35;pointer-events:none}
+
+/* ── Balance ── */
+.bal-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border)}
+.bal-name{font-weight:600}
+.bal-sub{font-size:.78rem;color:var(--muted)}
+.bal-amt{font-size:1rem;font-weight:800}
+.bal-pos{color:#065f46}
+.bal-neg{color:var(--danger)}
+
+/* ── Misc ── */
+.divider{height:1px;background:var(--border);margin:14px 0}
+.empty{text-align:center;padding:40px 20px;color:var(--muted)}
+.empty-icon{font-size:2.5rem;margin-bottom:8px}
+.loader{text-align:center;padding:40px;color:var(--muted);font-size:.9rem}
+.req-item{padding:12px 0;border-bottom:1px solid var(--border)}
+.req-item:last-child{border-bottom:none}
+#toast{position:fixed;bottom:86px;left:50%;transform:translateX(-50%) translateY(20px);background:#1a1a1a;color:#fff;padding:10px 20px;border-radius:20px;font-size:.85rem;opacity:0;transition:.25s;z-index:200;pointer-events:none;white-space:nowrap}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.success-anim{text-align:center;padding:24px 0}
+.success-anim .big{font-size:3rem;animation:pop .4s cubic-bezier(.4,2,.6,1) both}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+</style>
+</head>
+<body>
+
+<!-- ── Auth ── -->
+<div id="auth">
+  <div class="logo">vuelt<em>app</em></div>
+  <div class="tagline">Compartamos el camino al pueblo 🌿</div>
+
+  <div class="tabs">
+    <button class="tab on" onclick="switchTab('login')">Entrar</button>
+    <button class="tab" onclick="switchTab('register')">Registrarse</button>
+  </div>
+
+  <!-- Login -->
+  <div class="tab-pane on" id="pane-login">
+    <div id="err-login" class="err"></div>
+    <div class="fg"><label>Email</label><input type="email" id="l-email" placeholder="tu@email.com" autocomplete="email"></div>
+    <div class="fg"><label>Contraseña</label><input type="password" id="l-pw" placeholder="••••••••" autocomplete="current-password"></div>
+    <button class="btn btn-p" onclick="doLogin()">Entrar</button>
+  </div>
+
+  <!-- Register -->
+  <div class="tab-pane" id="pane-register">
+    <div id="err-reg" class="err"></div>
+    <div class="fg"><label>Nombre</label><input type="text" id="r-name" placeholder="Tu nombre completo"></div>
+    <div class="fg"><label>Email</label><input type="email" id="r-email" placeholder="tu@email.com" autocomplete="email"></div>
+    <div class="fg"><label>Contraseña</label><input type="password" id="r-pw" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div>
+    <div class="fg">
+      <label>Parcela</label>
+      <select id="r-parcela"><option value="">Selecciona tu parcela…</option></select>
+    </div>
+    <button class="btn btn-p" onclick="doRegister()">Crear cuenta</button>
+  </div>
+</div>
+
+<!-- ── Main App ── -->
+<div id="main">
+  <div class="topbar">
+    <div class="topbar-logo">vuelt<em>app</em></div>
+    <div class="topbar-user" id="topbar-user"></div>
+  </div>
+
+  <!-- Viajes -->
+  <div class="page on" id="page-trips">
+    <div class="week-nav">
+      <button class="wbtn" onclick="changeWeek(-1)">‹ Anterior</button>
+      <div class="week-label" id="week-label">—</div>
+      <button class="wbtn" onclick="changeWeek(1)">Siguiente ›</button>
+    </div>
+    <div id="trips-list"><div class="loader">Cargando viajes…</div></div>
+  </div>
+
+  <!-- Publicar -->
+  <div class="page" id="page-publish">
+    <div class="page-title">Publicar viaje</div>
+    <div id="publish-content"></div>
+  </div>
+
+  <!-- Mis Viajes -->
+  <div class="page" id="page-my">
+    <div class="page-title">Mis viajes</div>
+    <div id="my-content"><div class="loader">Cargando…</div></div>
+  </div>
+
+  <!-- Balance -->
+  <div class="page" id="page-balance">
+    <div class="page-title">Balance</div>
+    <div class="card" style="margin-bottom:16px;background:#f0f8f2;border:none">
+      <div style="font-size:.8rem;color:var(--muted)">Cada viaje como pasajero cuesta <strong>$2.000</strong>. El balance se actualiza automáticamente cuando el viaje ya pasó.</div>
+    </div>
+    <div id="balance-content"><div class="loader">Calculando…</div></div>
+  </div>
+
+  <!-- Perfil -->
+  <div class="page" id="page-profile">
+    <div class="page-title">Perfil</div>
+    <div id="profile-content"></div>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="ni on" id="ni-trips" onclick="showPage('trips')">
+      <span class="ni-icon">🗓</span>Viajes
+    </button>
+    <button class="ni" id="ni-publish" onclick="showPage('publish')">
+      <span class="ni-icon">➕</span>Publicar
+    </button>
+    <button class="ni" id="ni-my" onclick="showPage('my')">
+      <span class="ni-icon">🚗</span>Mis viajes
+    </button>
+    <button class="ni" id="ni-balance" onclick="showPage('balance')">
+      <span class="ni-icon">💰</span>Balance
+    </button>
+    <button class="ni" id="ni-profile" onclick="showPage('profile')">
+      <span class="ni-icon">👤</span>Perfil
+    </button>
+  </nav>
+</div>
+
+<!-- ── Trip Detail Modal ── -->
+<div class="overlay" id="modal-trip" onclick="if(event.target===this)closeModal('trip')">
+  <div class="modal">
+    <div class="mhandle"></div>
+    <div id="modal-trip-content"></div>
+  </div>
+</div>
+
+<!-- ── Reject Modal ── -->
+<div class="overlay" id="modal-reject" onclick="if(event.target===this)closeModal('reject')">
+  <div class="modal">
+    <div class="mhandle"></div>
+    <div class="mtitle">Rechazar solicitud</div>
+    <div class="fg"><label>Comentario (opcional)</label>
+      <textarea id="reject-comment" rows="3" placeholder="Ej: ya tengo el auto lleno…"></textarea>
+    </div>
+    <div class="row-btns">
+      <button class="btn btn-g btn-sm" onclick="closeModal('reject')">Cancelar</button>
+      <button class="btn btn-d btn-sm" onclick="confirmReject()">Confirmar rechazo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Pay Modal ── -->
+<div class="overlay" id="modal-pay" onclick="if(event.target===this)closeModal('pay')">
+  <div class="modal">
+    <div class="mhandle"></div>
+    <div class="mtitle" id="pay-title"></div>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:16px">¿Cuánto se pagó? (en pesos)</p>
+    <div class="fg"><input type="number" id="pay-amount" placeholder="Ej: 6000" step="2000"></div>
+    <div class="row-btns">
+      <button class="btn btn-g btn-sm" onclick="closeModal('pay')">Cancelar</button>
+      <button class="btn btn-p btn-sm" onclick="confirmPay()">Marcar como pagado</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════
+// CONFIG — pegar URL del deployment de GAS aquí
+// ══════════════════════════════════════════════
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbw6ZwE01qwfbt2LtQLFWLrFeniOkHRU-wPrU8z1n4cLrKC-rCfkkXf6YI-G6ITXS9sC/exec';
+
+var PUEBLOS = ['Puerto Varas Entrada Norte','Puerto Varas Entrada Sur','Puerto Varas Centro','Puerto Chico','Nueva Braunau','Llanquihue','Otro'];
+var DIAS_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+var MESES_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+// ── State ──
+var currentUser = null;
+var weekOffset = 1; // 1 = próxima semana por defecto
+var publishState = {}; // temp state for publish form
+var pendingRejectId = null;
+var pendingPayData = null;
+var tripsCache = null;
+
+// ── Init ──
+(function init() {
+  // Populate parcela select
+  var sel = document.getElementById('r-parcela');
+  for (var i = 1; i <= 50; i++) {
+    var o = document.createElement('option');
+    o.value = i; o.textContent = 'Parcela ' + i;
+    sel.appendChild(o);
+  }
+  // Restore session
+  try { currentUser = JSON.parse(localStorage.getItem('vu_user')); } catch(e) {}
+  if (currentUser) enterApp();
+})();
+
+// ── API ──
+function api(action, params) {
+  return new Promise(function(resolve) {
+    var url = GAS_URL + '?action=' + action;
+    if (params) Object.keys(params).forEach(function(k) {
+      url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    });
+    var done = false, timer;
+    function doJsonp() {
+      var cb = 'vu_' + Date.now();
+      window[cb] = function(d) {
+        if (done) return; done = true; clearTimeout(timer); delete window[cb]; resolve(d);
+      };
+      var s = document.createElement('script');
+      s.src = url + '&callback=' + cb;
+      s.onerror = function() { if (!done) { done = true; resolve({ error: 'Error de red' }); } };
+      document.head.appendChild(s);
+      timer = setTimeout(function() { if (!done) { done = true; resolve({ error: 'Timeout' }); } }, 10000);
+    }
+    var ft = setTimeout(function() { if (!done) doJsonp(); }, 5000);
+    fetch(url).then(function(r) { return r.json(); })
+      .then(function(d) { clearTimeout(ft); if (!done) { done = true; resolve(d); } })
+      .catch(function() { clearTimeout(ft); if (!done) doJsonp(); });
+  });
+}
+
+async function hashPw(pw) {
+  var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return Array.from(new Uint8Array(buf)).map(function(b) { return b.toString(16).padStart(2,'0'); }).join('');
+}
+
+// ── Helpers ──
+function toast(msg, ms) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('on');
+  setTimeout(function() { t.classList.remove('on'); }, ms || 2800);
+}
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('on'); });
+  document.querySelectorAll('.ni').forEach(function(n) { n.classList.remove('on'); });
+  document.getElementById('page-' + name).classList.add('on');
+  document.getElementById('ni-' + name).classList.add('on');
+  if (name === 'trips') loadTrips();
+  if (name === 'publish') renderPublishForm();
+  if (name === 'my') loadMyData();
+  if (name === 'balance') loadBalance();
+  if (name === 'profile') renderProfile();
+}
+
+function openModal(id) { document.getElementById('modal-' + id).classList.add('on'); }
+function closeModal(id) { document.getElementById('modal-' + id).classList.remove('on'); }
+
+function toDateStr(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function fmtDate(str) {
+  var p = str.split('-'); var d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+  return DIAS_ES[d.getDay()] + ' ' + d.getDate() + ' ' + MESES_ES[d.getMonth()];
+}
+
+function getWeekDates(offset) {
+  var today = new Date(); today.setHours(0,0,0,0);
+  var dow = today.getDay();
+  var monday = new Date(today);
+  monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7);
+  var days = [];
+  for (var i = 0; i < 7; i++) {
+    var d = new Date(monday); d.setDate(monday.getDate() + i); days.push(d);
+  }
+  return { start: toDateStr(days[0]), end: toDateStr(days[6]), days: days };
+}
+
+function changeWeek(delta) {
+  weekOffset += delta;
+  if (weekOffset < 0) weekOffset = 0;
+  loadTrips();
+}
+
+function switchTab(which) {
+  document.querySelectorAll('.tab').forEach(function(t, i) {
+    t.classList.toggle('on', (i === 0 && which === 'login') || (i === 1 && which === 'register'));
+  });
+  document.getElementById('pane-login').classList.toggle('on', which === 'login');
+  document.getElementById('pane-register').classList.toggle('on', which === 'register');
+}
+
+function enterApp() {
+  document.getElementById('auth').style.display = 'none';
+  document.getElementById('main').classList.add('on');
+  document.getElementById('topbar-user').textContent = currentUser.name + ' · P.' + currentUser.parcela;
+  loadTrips();
+}
+
+// ── Auth ──
+async function doLogin() {
+  var email = document.getElementById('l-email').value.trim();
+  var pw = document.getElementById('l-pw').value;
+  var err = document.getElementById('err-login');
+  err.classList.remove('on');
+  if (!email || !pw) { err.textContent = 'Completa todos los campos'; err.classList.add('on'); return; }
+  var hash = await hashPw(pw);
+  var res = await api('login', { email: email, hash: hash });
+  if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
+  currentUser = res.user;
+  localStorage.setItem('vu_user', JSON.stringify(currentUser));
+  enterApp();
+}
+
+async function doRegister() {
+  var name = document.getElementById('r-name').value.trim();
+  var email = document.getElementById('r-email').value.trim();
+  var pw = document.getElementById('r-pw').value;
+  var parcela = document.getElementById('r-parcela').value;
+  var err = document.getElementById('err-reg');
+  err.classList.remove('on');
+  if (!name || !email || !pw || !parcela) { err.textContent = 'Completa todos los campos'; err.classList.add('on'); return; }
+  if (pw.length < 6) { err.textContent = 'La contraseña debe tener al menos 6 caracteres'; err.classList.add('on'); return; }
+  var hash = await hashPw(pw);
+  var res = await api('register', { name: name, email: email, hash: hash, parcela: parcela });
+  if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
+  currentUser = res.user;
+  localStorage.setItem('vu_user', JSON.stringify(currentUser));
+  enterApp();
+}
+
+function logout() {
+  localStorage.removeItem('vu_user');
+  currentUser = null;
+  document.getElementById('main').classList.remove('on');
+  document.getElementById('auth').style.display = '';
+}
+
+// ── Trips page ──
+async function loadTrips() {
+  var week = getWeekDates(weekOffset);
+  var today = toDateStr(new Date());
+  // Label
+  var label = week.start === toDateStr(getWeekDates(0).days[0]) ? 'Esta semana' :
+               weekOffset === 1 ? 'Próxima semana' :
+               fmtDate(week.start) + ' — ' + fmtDate(week.end);
+  document.getElementById('week-label').textContent = label;
+  document.getElementById('trips-list').innerHTML = '<div class="loader">Cargando…</div>';
+  var res = await api('getTrips', { start: week.start, end: week.end });
+  if (res.error) { document.getElementById('trips-list').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div>' + res.error + '</div>'; return; }
+  tripsCache = res;
+  renderTripsList(res, week.days, today);
+}
+
+function renderTripsList(trips, days, today) {
+  var el = document.getElementById('trips-list');
+  var html = '';
+  days.forEach(function(day) {
+    var ds = toDateStr(day);
+    var dayTrips = trips.filter(function(t) { return t.date === ds; });
+    var isToday = ds === today;
+    var isPast = ds < today;
+    html += '<div class="day-sec">';
+    html += '<div class="day-lbl' + (isToday ? ' today' : '') + '">' + DIAS_ES[day.getDay()] + ' ' + day.getDate() + ' ' + MESES_ES[day.getMonth()] + (isToday ? ' — hoy' : '') + '</div>';
+    if (dayTrips.length === 0) {
+      html += '<div style="font-size:.8rem;color:var(--muted);padding:6px 4px 0">Sin viajes publicados</div>';
+    } else {
+      dayTrips.forEach(function(t) {
+        var isMine = t.driverId === currentUser.id;
+        var full = t.availableSeats <= 0;
+        var myReq = t.requests && t.requests.find(function(r) { return r.requesterId === currentUser.id; });
+        html += '<div class="tcard' + (isMine ? ' mine' : '') + (full && !isMine ? ' full' : '') + '" onclick="openTrip(\'' + t.id + '\')">';
+        html += '<div class="tc-time">' + t.time + '</div>';
+        var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
+        html += '<div class="tc-route">' + route + '</div>';
+        html += '<div class="tc-driver">' + (isMine ? 'Tu viaje' : t.driverName + ' · P.' + t.driverParcela) + '</div>';
+        html += '<div class="tc-seats">';
+        for (var i = 0; i < parseInt(t.totalSeats); i++) {
+          var seatsApproved = t.requests ? t.requests.filter(function(r){return r.status==='aprobado';}).length : 0;
+          html += '<div class="seat' + (i < seatsApproved ? ' taken' : '') + '"></div>';
+        }
+        var badgeTxt = '', badgeCls = '';
+        if (isPast) { badgeTxt = 'Pasado'; badgeCls = ''; }
+        else if (myReq) { badgeTxt = myReq.status; badgeCls = 'b-' + myReq.status.substr(0,4); }
+        else if (full) { badgeTxt = 'Lleno'; badgeCls = 'b-rech'; }
+        else { badgeTxt = t.availableSeats + ' cupo' + (t.availableSeats > 1 ? 's' : ''); badgeCls = 'b-disp'; }
+        if (badgeTxt) html += '<span class="tc-badge ' + badgeCls + '">' + badgeTxt + '</span>';
+        html += '</div></div>';
+      });
+    }
+    html += '</div>';
+  });
+  el.innerHTML = html;
+}
+
+function openTrip(tripId) {
+  var trip = tripsCache && tripsCache.find(function(t) { return t.id === tripId; });
+  if (!trip) return;
+  var isMine = trip.driverId === currentUser.id;
+  var myReq = trip.requests && trip.requests.find(function(r) { return r.requesterId === currentUser.id; });
+  var approved = trip.requests ? trip.requests.filter(function(r){return r.status==='aprobado';}).length : 0;
+  var today = toDateStr(new Date());
+  var isPast = trip.date < today;
+  var route = trip.direction === 'salida' ? 'PBI → ' + trip.puebloPoint : trip.puebloPoint + ' → PBI';
+
+  var html = '<div class="mtitle">' + fmtDate(trip.date) + ' · ' + trip.time + '</div>';
+  html += '<div style="font-size:1rem;margin-bottom:4px">' + route + '</div>';
+  html += '<div style="font-size:.85rem;color:var(--muted);margin-bottom:16px">' + (isMine ? 'Tu viaje' : 'Conductor: ' + trip.driverName + ' (P.' + trip.driverParcela + ')') + '</div>';
+  html += '<div class="divider"></div>';
+
+  // Seats visual
+  html += '<div style="margin:12px 0"><div style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Cupos</div>';
+  html += '<div class="tc-seats">';
+  for (var i = 0; i < parseInt(trip.totalSeats); i++) {
+    html += '<div class="seat" style="width:18px;height:18px;' + (i < approved ? 'background:var(--pa)' : '') + '"></div>';
+  }
+  html += '<span style="font-size:.85rem;margin-left:8px;color:var(--muted)">' + approved + '/' + trip.totalSeats + ' ocupados</span>';
+  html += '</div></div><div class="divider"></div>';
+
+  if (!isMine && !isPast) {
+    if (!myReq) {
+      if (trip.availableSeats > 0) {
+        html += '<button class="btn btn-p" style="margin-top:14px" onclick="doRequest(\'' + trip.id + '\',\'' + trip.driverId + '\')">Solicitar cupo</button>';
+      } else {
+        html += '<div class="btn btn-g" style="margin-top:14px;opacity:.6;cursor:default">Sin cupos disponibles</div>';
+      }
+    } else {
+      var statusLabels = { solicitado: '⏳ Solicitud pendiente', aprobado: '✅ Aprobado — ¡a rodar!', rechazado: '❌ Rechazado' };
+      var statusColors = { solicitado: '#92400e', aprobado: '#065f46', rechazado: '#991b1b' };
+      html += '<div style="text-align:center;padding:16px;font-weight:700;color:' + (statusColors[myReq.status]||'var(--muted)') + '">' + (statusLabels[myReq.status] || myReq.status) + '</div>';
+      if (myReq.status === 'rechazado' && myReq.driverComment) {
+        html += '<div style="font-size:.82rem;color:var(--muted);text-align:center">Comentario: ' + myReq.driverComment + '</div>';
+      }
+    }
+  }
+
+  document.getElementById('modal-trip-content').innerHTML = html;
+  openModal('trip');
+}
+
+async function doRequest(tripId, driverId) {
+  closeModal('trip');
+  // Find driver email — we need to reload my trips to get it, let's pass current email
+  var trip = tripsCache && tripsCache.find(function(t) { return t.id === tripId; });
+  if (!trip) return;
+  toast('Enviando solicitud…');
+  var res = await api('requestTrip', {
+    tripId: tripId,
+    requesterId: currentUser.id,
+    requesterEmail: currentUser.email,
+    requesterName: currentUser.name,
+    requesterParcela: currentUser.parcela,
+    driverEmail: trip.driverEmail || '' // may not be in cache; GAS looks it up from Users
+  });
+  if (res.error) { toast('Error: ' + res.error); return; }
+  toast('✅ Solicitud enviada — el conductor recibirá un mail');
+  loadTrips();
+}
+
+// ── Publish page ──
+function renderPublishForm(prefill) {
+  var today = new Date();
+  var defaultDate = new Date(today); defaultDate.setDate(today.getDate() + 1);
+  var ps = prefill || {};
+  var html = '';
+  html += '<div class="fg"><label>Dirección</label><div class="dir-grid">';
+  html += '<div class="dbtn' + (ps.dir === 'salida' ? ' on' : '') + '" onclick="selDir(\'salida\',this)">🡒 Salida<br><small style="font-weight:400;font-size:.75rem">PBI → Pueblo</small></div>';
+  html += '<div class="dbtn' + (ps.dir === 'regreso' ? ' on' : '') + '" onclick="selDir(\'regreso\',this)">🡐 Regreso<br><small style="font-weight:400;font-size:.75rem">Pueblo → PBI</small></div>';
+  html += '</div></div>';
+  html += '<div class="fg"><label>Punto de encuentro</label><select id="pub-pueblo" onchange="onPuebloChange()">';
+  html += '<option value="">Selecciona un punto…</option>';
+  PUEBLOS.forEach(function(p) {
+    html += '<option value="' + p + '"' + (ps.pueblo === p ? ' selected' : '') + '>' + p + '</option>';
+  });
+  html += '</select></div>';
+  html += '<div class="fg" id="fg-otro" style="display:none"><label>¿Cuál punto?</label><input type="text" id="pub-otro" placeholder="Descripción del punto…" value="' + (ps.otro||'') + '"></div>';
+  html += '<div class="fg"><label>Fecha</label><input type="date" id="pub-date" value="' + (ps.date || toDateStr(defaultDate)) + '"></div>';
+  html += '<div class="fg"><label>Hora</label><input type="time" id="pub-time" value="' + (ps.time || '08:00') + '"></div>';
+  html += '<div class="fg"><label>Cupos disponibles</label><div class="seats-row">';
+  [1,2,3,4].forEach(function(n) {
+    html += '<div class="sbtn' + (ps.seats === n ? ' on' : '') + '" onclick="selSeats(' + n + ',this)">' + n + '</div>';
+  });
+  html += '</div></div>';
+  html += '<div id="pub-err" class="err"></div>';
+  html += '<button class="btn btn-p" onclick="doPublish()">Publicar viaje</button>';
+  document.getElementById('publish-content').innerHTML = html;
+  publishState = { dir: ps.dir || null, seats: ps.seats || null, pueblo: ps.pueblo || null };
+  if (ps.pueblo === 'Otro') document.getElementById('fg-otro').style.display = 'block';
+}
+
+function selDir(val, el) {
+  publishState.dir = val;
+  document.querySelectorAll('.dbtn').forEach(function(b) { b.classList.remove('on'); });
+  el.classList.add('on');
+}
+
+function selSeats(n, el) {
+  publishState.seats = n;
+  document.querySelectorAll('.sbtn').forEach(function(b) { b.classList.remove('on'); });
+  el.classList.add('on');
+}
+
+function onPuebloChange() {
+  var val = document.getElementById('pub-pueblo').value;
+  var fg = document.getElementById('fg-otro');
+  if (fg) fg.style.display = val === 'Otro' ? 'block' : 'none';
+}
+
+async function doPublish() {
+  var err = document.getElementById('pub-err');
+  err.classList.remove('on');
+  var date = document.getElementById('pub-date').value;
+  var time = document.getElementById('pub-time').value;
+  var puebloRaw = document.getElementById('pub-pueblo').value;
+  var pueblo = puebloRaw === 'Otro' ? (document.getElementById('pub-otro').value.trim() || 'Otro') : puebloRaw;
+  if (!publishState.dir) { err.textContent = 'Selecciona una dirección'; err.classList.add('on'); return; }
+  if (!pueblo) { err.textContent = 'Selecciona un punto de encuentro'; err.classList.add('on'); return; }
+  if (!date) { err.textContent = 'Elige una fecha'; err.classList.add('on'); return; }
+  if (!time) { err.textContent = 'Elige una hora'; err.classList.add('on'); return; }
+  if (!publishState.seats) { err.textContent = 'Selecciona los cupos disponibles'; err.classList.add('on'); return; }
+
+  var payload = {
+    driverId: currentUser.id, driverName: currentUser.name, driverParcela: currentUser.parcela,
+    date: date, time: time, direction: publishState.dir, puebloPoint: pueblo, seats: publishState.seats
+  };
+  var res = await api('addTrip', payload);
+  if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
+
+  // Show success + repeat prompt
+  renderRepeatPrompt({ dir: publishState.dir, time: time, pueblo: pueblo, seats: publishState.seats, publishedDate: date });
+}
+
+function renderRepeatPrompt(base) {
+  var today = new Date(); today.setHours(0,0,0,0);
+  var chips = '';
+  // Next 14 days
+  for (var i = 0; i < 14; i++) {
+    var d = new Date(today); d.setDate(today.getDate() + i + 1);
+    var ds = toDateStr(d);
+    var lbl = DIAS_ES[d.getDay()] + '<br>' + d.getDate() + ' ' + MESES_ES[d.getMonth()];
+    chips += '<div class="dchip" data-date="' + ds + '" onclick="this.classList.toggle(\'on\')">' + lbl + '</div>';
+  }
+  var route = base.dir === 'salida' ? 'PBI → ' + base.pueblo : base.pueblo + ' → PBI';
+  document.getElementById('publish-content').innerHTML =
+    '<div class="success-anim"><div class="big">✅</div><div style="font-weight:700;margin-top:8px">¡Viaje publicado!</div><div style="font-size:.85rem;color:var(--muted);margin-top:4px">' + route + ' · ' + base.time + ' · ' + base.seats + ' cupo' + (base.seats > 1 ? 's' : '') + '</div></div>' +
+    '<div class="repeat-box">' +
+    '<div class="repeat-title">¿Repetir en más días?</div>' +
+    '<div class="repeat-sub">Misma hora, dirección y cupos. Toca los días que quieras agregar.</div>' +
+    '<div class="days-grid">' + chips + '</div>' +
+    '<div class="row-btns">' +
+    '<button class="btn btn-g btn-sm" onclick="renderPublishForm()">Nueva diferente</button>' +
+    '<button class="btn btn-p btn-sm" onclick="doRepeatDays(' + JSON.stringify(base) + ')">Agregar días seleccionados</button>' +
+    '</div></div>';
+}
+
+async function doRepeatDays(base) {
+  var selected = document.querySelectorAll('.dchip.on');
+  if (selected.length === 0) { toast('Selecciona al menos un día'); return; }
+  var trips = Array.from(selected).map(function(chip) {
+    return { driverId: currentUser.id, driverName: currentUser.name, driverParcela: currentUser.parcela,
+      date: chip.dataset.date, time: base.time, direction: base.dir, puebloPoint: base.pueblo, seats: base.seats };
+  });
+  var res = await api('addTrips', { trips: JSON.stringify(trips) });
+  if (res.error) { toast('Error: ' + res.error); return; }
+  toast('✅ ' + trips.length + ' viaje' + (trips.length > 1 ? 's' : '') + ' publicado' + (trips.length > 1 ? 's' : ''));
+  renderPublishForm();
+}
+
+// ── My Trips page ──
+async function loadMyData() {
+  document.getElementById('my-content').innerHTML = '<div class="loader">Cargando…</div>';
+  var [tripsRes, reqsRes] = await Promise.all([
+    api('getMyTrips', { userId: currentUser.id }),
+    api('getMyRequests', { userId: currentUser.id })
+  ]);
+  renderMyData(tripsRes, reqsRes);
+}
+
+function renderMyData(myTrips, myReqs) {
+  var html = '';
+  var today = toDateStr(new Date());
+
+  // My upcoming published trips
+  html += '<div class="page-title" style="margin-bottom:12px">Mis viajes publicados</div>';
+  var upcoming = Array.isArray(myTrips) ? myTrips.filter(function(t){ return t.date >= today; }) : [];
+  upcoming.sort(function(a,b){ return (a.date+a.time).localeCompare(b.date+b.time); });
+  if (upcoming.length === 0) {
+    html += '<div class="empty"><div class="empty-icon">🚗</div>No tienes viajes publicados próximos<br><small style="font-size:.8rem;margin-top:6px;display:block">Ve a Publicar para agregar uno</small></div>';
+  } else {
+    upcoming.forEach(function(t) {
+      var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
+      var pending = t.requests ? t.requests.filter(function(r){ return r.status === 'solicitado'; }) : [];
+      html += '<div class="card">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start">';
+      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div><div style="font-size:.85rem;color:var(--muted)">' + route + ' · ' + t.totalSeats + ' cupos</div></div>';
+      if (pending.length > 0) html += '<span class="tc-badge b-sol">' + pending.length + ' pendiente' + (pending.length>1?'s':'') + '</span>';
+      html += '</div>';
+      if (t.requests && t.requests.length > 0) {
+        html += '<div class="divider"></div>';
+        t.requests.forEach(function(r) {
+          html += '<div class="req-item"><div style="display:flex;justify-content:space-between;align-items:center">';
+          html += '<div><div style="font-size:.9rem;font-weight:600">' + r.requesterName + ' · P.' + r.requesterParcela + '</div>';
+          html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + r.status + '</span></div>';
+          if (r.status === 'solicitado') {
+            html += '<div style="display:flex;gap:6px">';
+            html += '<button class="btn btn-p btn-sm" onclick="appRespond(\'' + r.id + '\',true)">✓</button>';
+            html += '<button class="btn btn-d btn-sm" onclick="openReject(\'' + r.id + '\')">✕</button>';
+            html += '</div>';
+          }
+          html += '</div></div>';
+        });
+      }
+      html += '</div>';
+    });
+  }
+
+  html += '<div class="divider" style="margin:20px 0"></div>';
+  html += '<div class="page-title" style="margin-bottom:12px">Mis solicitudes</div>';
+  var myReqsList = Array.isArray(myReqs) ? myReqs : [];
+  myReqsList.sort(function(a,b) {
+    var ad = a.trip ? a.trip.date+a.trip.time : ''; var bd = b.trip ? b.trip.date+b.trip.time : '';
+    return ad.localeCompare(bd);
+  });
+  if (myReqsList.length === 0) {
+    html += '<div class="empty"><div class="empty-icon">🗓</div>Todavía no has solicitado ningún viaje</div>';
+  } else {
+    myReqsList.forEach(function(r) {
+      var t = r.trip;
+      html += '<div class="card">';
+      if (t) {
+        var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
+        html += '<div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div>';
+        html += '<div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">' + route + ' con ' + t.driverName + '</div>';
+      }
+      html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + r.status + '</span>';
+      if (r.status === 'rechazado' && r.driverComment) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:6px">"' + r.driverComment + '"</div>';
+      html += '</div>';
+    });
+  }
+
+  document.getElementById('my-content').innerHTML = html;
+}
+
+function openReject(reqId) {
+  pendingRejectId = reqId;
+  document.getElementById('reject-comment').value = '';
+  openModal('reject');
+}
+
+async function appRespond(reqId, approve, comment) {
+  var res = await api('respondRequest', { requestId: reqId, r: approve ? 'aprobado' : 'rechazado', comment: comment || '' });
+  if (res.error) { toast('Error: ' + res.error); return; }
+  toast(approve ? '✅ Solicitud aprobada' : '❌ Solicitud rechazada');
+  loadMyData();
+}
+
+function confirmReject() {
+  var comment = document.getElementById('reject-comment').value.trim();
+  closeModal('reject');
+  appRespond(pendingRejectId, false, comment);
+  pendingRejectId = null;
+}
+
+// ── Balance page ──
+async function loadBalance() {
+  document.getElementById('balance-content').innerHTML = '<div class="loader">Calculando…</div>';
+  var res = await api('getBalance', { userId: currentUser.id });
+  if (res.error) { document.getElementById('balance-content').innerHTML = '<div class="empty">⚠️ ' + res.error + '</div>'; return; }
+  renderBalance(res.balances || []);
+}
+
+function renderBalance(balances) {
+  if (balances.length === 0) {
+    document.getElementById('balance-content').innerHTML = '<div class="empty"><div class="empty-icon">🎉</div>Todo al día — sin deudas pendientes</div>';
+    return;
+  }
+  var html = '';
+  balances.forEach(function(b) {
+    var iOwe = b.amount < 0;
+    var absAmt = Math.abs(b.amount);
+    var fmtAmt = '$' + absAmt.toLocaleString('es-CL');
+    html += '<div class="bal-row">';
+    html += '<div><div class="bal-name">' + b.name + '</div><div class="bal-sub">Parcela ' + b.parcela + '</div>';
+    html += '<div style="font-size:.75rem;color:var(--muted);margin-top:2px">' + (iOwe ? 'Les debes' : 'Te deben') + '</div></div>';
+    html += '<div style="display:flex;align-items:center;gap:12px">';
+    html += '<div class="bal-amt ' + (iOwe ? 'bal-neg' : 'bal-pos') + '">' + fmtAmt + '</div>';
+    html += '<button class="btn btn-g btn-sm" onclick="openPay(\'' + b.userId + '\',\'' + b.name + '\',' + absAmt + ',' + (iOwe ? 'true' : 'false') + ')">Pagado</button>';
+    html += '</div></div>';
+  });
+  document.getElementById('balance-content').innerHTML = html;
+}
+
+function openPay(otherId, otherName, amount, iOwe) {
+  pendingPayData = { otherId: otherId, otherName: otherName, amount: amount, iOwe: iOwe };
+  document.getElementById('pay-title').textContent = iOwe ? 'Pago a ' + otherName : otherName + ' te pagó';
+  document.getElementById('pay-amount').value = amount;
+  openModal('pay');
+}
+
+async function confirmPay() {
+  var amount = parseInt(document.getElementById('pay-amount').value);
+  if (!amount || amount <= 0) { toast('Ingresa un monto válido'); return; }
+  var d = pendingPayData;
+  var res = await api('addPayment', {
+    fromUserId: d.iOwe ? currentUser.id : d.otherId,
+    toUserId:   d.iOwe ? d.otherId : currentUser.id,
+    amount: amount
+  });
+  closeModal('pay');
+  if (res.error) { toast('Error: ' + res.error); return; }
+  toast('✅ Pago registrado');
+  loadBalance();
+}
+
+// ── Profile page ──
+function renderProfile() {
+  document.getElementById('profile-content').innerHTML =
+    '<div class="card">' +
+    '<div style="font-size:2.5rem;text-align:center;margin-bottom:12px">👤</div>' +
+    '<div style="text-align:center;font-size:1.15rem;font-weight:800;margin-bottom:4px">' + currentUser.name + '</div>' +
+    '<div style="text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:4px">' + currentUser.email + '</div>' +
+    '<div style="text-align:center;font-size:.9rem;font-weight:600;color:var(--p);margin-bottom:20px">Parcela ' + currentUser.parcela + '</div>' +
+    '<button class="btn btn-o" onclick="logout()">Cerrar sesión</button>' +
+    '</div>';
+}
+</script>
+</body>
+</html>
