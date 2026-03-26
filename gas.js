@@ -207,17 +207,21 @@ function requestTrip(p) {
   var approveLink = gasUrl + '?action=respond&token=' + token + '&r=approve';
   var rejectLink  = gasUrl + '?action=respond&token=' + token + '&r=reject';
 
+  if (!driverEmail) return { error: 'No se encontró el email del conductor. Pídele que verifique su cuenta.' };
+
+  var mailError = null;
   try {
     MailApp.sendEmail({
       to: driverEmail,
-      subject: '🚗 Solicitud de viaje — ' + req.requesterName,
-      body: req.requesterName + ' (Parcela ' + req.requesterParcela + ') solicita tu viaje del ' +
-        trip.date + ' a las ' + trip.time + '.\nRuta: ' + route + '\n\n' +
-        '✅ APROBAR:\n' + approveLink + '\n\n❌ RECHAZAR:\n' + rejectLink
+      subject: '🛻 Solicitud de viaje — ' + req.requesterName,
+      body: req.requesterName + ' (Parcela ' + req.requesterParcela + ') quiere unirse a tu viaje del ' +
+        trip.date + ' a las ' + trip.time + '.\nRuta: ' + route +
+        '\n\nResponde desde los botones o directamente en vueltapp (el pasajero recibirá un mail con tu respuesta).' +
+        '\n\n✅ APROBAR:\n' + approveLink + '\n\n❌ RECHAZAR:\n' + rejectLink
     });
-  } catch(e) {}
+  } catch(e) { mailError = e.toString(); }
 
-  return { ok: true, requestId: req.id };
+  return { ok: true, requestId: req.id, mailError: mailError };
 }
 
 function respondRequest(p) {
@@ -236,17 +240,18 @@ function respondRequest(p) {
   var trip = trips.find(function(t){ return t.id === req.tripId; });
   var dateStr = trip ? trip.date + ' a las ' + trip.time : '';
 
+  var mailError = null;
   try {
     MailApp.sendEmail({
       to: req.requesterEmail,
       subject: newStatus === 'aprobado' ? '✅ Viaje aprobado — ' + req.driverName : '❌ Solicitud rechazada — ' + req.driverName,
       body: newStatus === 'aprobado'
-        ? req.driverName + ' aprobó tu solicitud para el ' + dateStr + '. ¡Nos vemos en la ruta!'
+        ? req.driverName + ' aprobó tu solicitud para el ' + dateStr + '. ¡Nos vemos en la ruta! Puedes ver el detalle en vueltapp.'
         : req.driverName + ' rechazó tu solicitud para el ' + dateStr + '.' + (comment ? '\n\nComentario: ' + comment : '')
     });
-  } catch(e) {}
+  } catch(e) { mailError = e.toString(); }
 
-  return { ok: true, status: newStatus };
+  return { ok: true, status: newStatus, mailError: mailError };
 }
 
 function handleEmailRespond(p) {

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>vueltapp</title>
 <script src="https://accounts.google.com/gsi/client" async></script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛻</text></svg>">
 <style>
 :root {
   --p:#2c5530; --pl:#4a8c50; --pa:#e8855a; --bg:#f4f0eb; --card:#fff;
@@ -293,6 +294,11 @@ var balancesCache = [];
 var tripsCache = null;
 var pendingRepeatBase = null;
 
+// ── In-memory caches (prefetch al entrar) ──
+var myTripsData = null;
+var myReqsData = null;
+var balanceData = null;
+
 // ── Cache (stale-while-revalidate) ──
 var CACHE_TTL = 3 * 60 * 1000; // 3 min
 function cacheKey(s, e) { return 'vu_t_' + s + '_' + e; }
@@ -402,6 +408,25 @@ function enterApp() {
   document.getElementById('main').classList.add('on');
   document.getElementById('topbar-user').textContent = currentUser.name + ' · P.' + currentUser.parcela;
   loadTrips();
+  prefetchAll();
+}
+
+async function prefetchAll() {
+  var w0 = getWeekDates(0), w1 = getWeekDates(1);
+  try {
+    var results = await Promise.all([
+      api('getTrips', { start: w0.start, end: w0.end }),
+      api('getTrips', { start: w1.start, end: w1.end }),
+      api('getMyTrips', { userId: currentUser.id }),
+      api('getMyRequests', { userId: currentUser.id }),
+      api('getBalance', { userId: currentUser.id })
+    ]);
+    if (!results[0].error) setCache(cacheKey(w0.start, w0.end), results[0]);
+    if (!results[1].error) { setCache(cacheKey(w1.start, w1.end), results[1]); tripsCache = results[1]; }
+    if (!results[2].error) myTripsData = results[2];
+    if (!results[3].error) myReqsData = results[3];
+    if (!results[4].error) balanceData = results[4].balances;
+  } catch(e) {}
 }
 
 // ── Auth Google ──
@@ -446,6 +471,7 @@ function logout() {
     .filter(function(k){ return k.startsWith('vu_'); })
     .forEach(function(k){ localStorage.removeItem(k); });
   currentUser = null;
+  myTripsData = null; myReqsData = null; balanceData = null; tripsCache = null;
   document.getElementById('main').classList.remove('on');
   document.getElementById('auth').style.display = '';
   // Re-inicializar botón de Google
@@ -582,7 +608,11 @@ async function doRequest(tripId, driverId) {
     driverEmail: trip.driverEmail || '' // may not be in cache; GAS looks it up from Users
   });
   if (res.error) { toast('Error: ' + res.error); return; }
-  toast('✅ Solicitud enviada — el conductor recibirá un mail');
+  if (res.mailError) {
+    toast('✅ Solicitud enviada — avisa al conductor directo (fallo el mail)', 4000);
+  } else {
+    toast('✅ Solicitud enviada — el conductor recibirá un mail y te responderá por aquí', 4000);
+  }
   loadTrips();
 }
 
@@ -726,12 +756,20 @@ function goToTripsAtDate(dateStr) {
 
 // ── My Trips page ──
 async function loadMyData() {
-  document.getElementById('my-content').innerHTML = '<div class="loader">Cargando…</div>';
+  // Mostrar cache en memoria al instante si existe
+  if (myTripsData !== null || myReqsData !== null) {
+    renderMyData(myTripsData || [], myReqsData || []);
+  } else {
+    document.getElementById('my-content').innerHTML = '<div class="loader">Cargando…</div>';
+  }
+  // Refrescar siempre en background
   var [tripsRes, reqsRes] = await Promise.all([
     api('getMyTrips', { userId: currentUser.id }),
     api('getMyRequests', { userId: currentUser.id })
   ]);
-  renderMyData(tripsRes, reqsRes);
+  if (!tripsRes.error) myTripsData = tripsRes;
+  if (!reqsRes.error) myReqsData = reqsRes;
+  renderMyData(tripsRes.error ? (myTripsData||[]) : tripsRes, reqsRes.error ? (myReqsData||[]) : reqsRes);
 }
 
 function renderMyData(myTrips, myReqs) {
@@ -808,7 +846,13 @@ function openReject(reqId) {
 async function appRespond(reqId, approve, comment) {
   var res = await api('respondRequest', { requestId: reqId, r: approve ? 'aprobado' : 'rechazado', comment: comment || '' });
   if (res.error) { toast('Error: ' + res.error); return; }
-  toast(approve ? '✅ Solicitud aprobada' : '❌ Solicitud rechazada');
+  var mailOk = !res.mailError;
+  if (approve) {
+    toast(mailOk ? '✅ Aprobado — el pasajero recibirá un mail' : '✅ Aprobado — avisa al pasajero directo (falló el mail)', 4000);
+  } else {
+    toast(mailOk ? '❌ Rechazado — el pasajero fue notificado' : '❌ Rechazado — avisa al pasajero directo (falló el mail)', 4000);
+  }
+  myTripsData = null; myReqsData = null; // invalidar cache para recargar
   loadMyData();
 }
 
@@ -821,10 +865,20 @@ function confirmReject() {
 
 // ── Balance page ──
 async function loadBalance() {
-  document.getElementById('balance-content').innerHTML = '<div class="loader">Calculando…</div>';
+  // Mostrar cache en memoria al instante si existe
+  if (balanceData !== null) {
+    renderBalance(balanceData);
+  } else {
+    document.getElementById('balance-content').innerHTML = '<div class="loader">Calculando…</div>';
+  }
+  // Refrescar en background
   var res = await api('getBalance', { userId: currentUser.id });
-  if (res.error) { document.getElementById('balance-content').innerHTML = '<div class="empty">⚠️ ' + res.error + '</div>'; return; }
-  renderBalance(res.balances || []);
+  if (res.error) {
+    if (balanceData === null) document.getElementById('balance-content').innerHTML = '<div class="empty">⚠️ ' + res.error + '</div>';
+    return;
+  }
+  balanceData = res.balances || [];
+  renderBalance(balanceData);
 }
 
 function renderBalance(balances) {
@@ -872,6 +926,7 @@ async function confirmPay() {
   closeModal('pay');
   if (res.error) { toast('Error: ' + res.error); return; }
   toast('✅ Pago registrado');
+  balanceData = null; // invalidar para refrescar
   loadBalance();
 }
 
