@@ -219,26 +219,29 @@ function requestTrip(p) {
   var approved = requests.filter(function(r){ return r.tripId === p.tripId && r.status === 'aprobado'; }).length;
   if (approved >= parseInt(trip.totalSeats)) return { error: 'No hay cupos disponibles' };
 
-  // Look up driver email from Users sheet (never trust client for this)
+  // Buscar datos reales del conductor y del solicitante desde Users (no confiar en el cliente)
   var users = getRows('Users');
   var driver = users.find(function(u){ return u.id === trip.driverId; });
-  var driverEmail = driver ? driver.email : '';
-  Logger.log('requestTrip — driverId buscado: ' + trip.driverId + ' | driver encontrado: ' + (driver ? driver.name : 'NO') + ' | email: [' + driverEmail + ']');
+  if (!driver) return { error: 'No se encontró el conductor. Pídele que verifique su cuenta.' };
+  var driverEmail = driver.email;
+
+  var requester = users.find(function(u){ return u.id === p.requesterId; });
+  if (!requester) return { error: 'Usuario no encontrado. Cerrá sesión y volvé a entrar.' };
 
   var token = uid();
   var req = { id: uid(), tripId: p.tripId, driverId: trip.driverId, driverEmail: driverEmail,
-    driverName: trip.driverName, requesterId: p.requesterId, requesterEmail: p.requesterEmail,
-    requesterName: p.requesterName, requesterParcela: p.requesterParcela,
+    driverName: trip.driverName, requesterId: requester.id, requesterEmail: requester.email,
+    requesterName: requester.name, requesterParcela: requester.parcela,
     status: 'solicitado', token: token, driverComment: '',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+
+  // Guardar solo después de validar todo
   appendRow('Requests', req);
 
   var gasUrl = ScriptApp.getService().getUrl();
   var route = trip.direction === 'salida' ? 'PBI → ' + trip.puebloPoint : trip.puebloPoint + ' → PBI';
   var approveLink = gasUrl + '?action=respond&token=' + token + '&r=approve';
   var rejectLink  = gasUrl + '?action=respond&token=' + token + '&r=reject';
-
-  if (!driverEmail) return { error: 'No se encontró el email del conductor. Pídele que verifique su cuenta.' };
 
   var mailError = null;
   try {

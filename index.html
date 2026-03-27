@@ -301,7 +301,7 @@ var balanceData = null;
 
 // ── Cache (stale-while-revalidate) ──
 var CACHE_TTL = 3 * 60 * 1000; // 3 min
-function cacheKey(s, e) { return 'vu_t_' + s + '_' + e; }
+function cacheKey(s, e) { return 'vu_t_' + (currentUser ? currentUser.id.slice(0,8) : 'x') + '_' + s + '_' + e; }
 function getCached(k) {
   try { var x = JSON.parse(localStorage.getItem(k)); if (x && Date.now()-x.ts < CACHE_TTL) return x.d; } catch(e) {}
   return null;
@@ -350,8 +350,10 @@ function api(action, params) {
 }
 
 function decodeJwt(token) {
-  var b64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
-  return JSON.parse(atob(b64));
+  try {
+    var b64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    return JSON.parse(atob(b64));
+  } catch(e) { return null; }
 }
 
 // ── Helpers ──
@@ -436,6 +438,10 @@ async function handleCredentialResponse(response) {
   var payload = decodeJwt(response.credential);
   var err = document.getElementById('auth-err');
   err.classList.remove('on');
+  if (!payload || !payload.sub || !payload.email) {
+    err.textContent = 'Error al verificar tu cuenta Google. Intenta de nuevo.';
+    err.classList.add('on'); return;
+  }
   var res = await api('googleAuth', { googleId: payload.sub, email: payload.email, name: payload.name });
   if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
   if (res.needsParcela) {
@@ -472,6 +478,8 @@ function logout() {
     .forEach(function(k){ localStorage.removeItem(k); });
   currentUser = null;
   myTripsData = null; myReqsData = null; balanceData = null; tripsCache = null;
+  // Limpiar estado pendiente para no filtrar datos entre usuarios
+  pendingGoogle = null; pendingRejectId = null; pendingPayData = null; pendingRepeatBase = null;
   document.getElementById('main').classList.remove('on');
   document.getElementById('auth').style.display = '';
   // Re-inicializar botón de Google
@@ -677,6 +685,7 @@ async function doPublish() {
   if (!date) { err.textContent = 'Elige una fecha'; err.classList.add('on'); return; }
   if (!time) { err.textContent = 'Elige una hora'; err.classList.add('on'); return; }
   if (!publishState.seats) { err.textContent = 'Selecciona los cupos disponibles'; err.classList.add('on'); return; }
+  if (date < toDateStr(new Date())) { err.textContent = 'La fecha debe ser hoy o en el futuro'; err.classList.add('on'); return; }
 
   var payload = {
     driverId: currentUser.id, driverName: currentUser.name, driverParcela: currentUser.parcela,
