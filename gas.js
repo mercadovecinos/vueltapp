@@ -92,6 +92,19 @@ function appendRow(name, obj) {
   s.appendRow(headers.map(function(h){ return obj[h] !== undefined ? obj[h] : ''; }));
 }
 
+function deleteRow(name, idVal) {
+  var s = getSheet(name);
+  var data = s.getDataRange().getValues();
+  var idCol = data[0].indexOf('id');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(idVal)) {
+      s.deleteRow(i + 1);
+      return true;
+    }
+  }
+  return false;
+}
+
 function updateRow(name, idVal, updates) {
   var s = getSheet(name);
   var data = s.getDataRange().getValues();
@@ -129,6 +142,8 @@ function doGet(e) {
     else if (action === 'getMyRequests') result = getMyRequests(p);
     else if (action === 'getBalance')    result = getBalance(p);
     else if (action === 'addPayment')    result = addPayment(p);
+    else if (action === 'cancelTrip')    result = cancelTrip(p);
+    else if (action === 'cancelRequest') result = cancelRequest(p);
     else if (action === 'ping')          result = pingAction(p);
     else result = { error: 'Acción desconocida' };
   } catch(err) {
@@ -394,6 +409,71 @@ function addPayment(p) {
   if (!amount || amount <= 0) return { error: 'Monto inválido' };
   appendRow('Payments', { id: uid(), fromUserId: p.fromUserId, toUserId: p.toUserId,
     amount: amount, createdAt: new Date().toISOString() });
+  return { ok: true };
+}
+
+function cancelTrip(p) {
+  if (!p.callerId || !p.tripId) return { error: 'Datos incompletos' };
+  var trips = getRows('Trips');
+  var trip = trips.find(function(t){ return t.id === p.tripId; });
+  if (!trip) return { error: 'Viaje no encontrado' };
+  if (trip.driverId !== p.callerId) return { error: 'Solo el conductor puede cancelar este viaje' };
+  var today = new Date().toISOString().split('T')[0];
+  if (trip.date < today) return { error: 'No se puede cancelar un viaje pasado' };
+
+  // Cancelar y notificar a todos los pasajeros con solicitud activa
+  var requests = getRows('Requests');
+  var active = requests.filter(function(r){
+    return r.tripId === p.tripId && (r.status === 'solicitado' || r.status === 'aprobado');
+  });
+  active.forEach(function(r) {
+    updateRow('Requests', r.id, { status: 'cancelado', updatedAt: new Date().toISOString() });
+    try {
+      MailApp.sendEmail({
+        to: r.requesterEmail,
+        subject: '❌ Viaje cancelado — ' + trip.driverName,
+        body: trip.driverName + ' canceló el viaje del ' + trip.date + ' a las ' + trip.time + '.\nRuta: ' +
+          (trip.direction === 'salida' ? 'PBI → ' + trip.puebloPoint : trip.puebloPoint + ' → PBI') +
+          '\n\nTu solicitud quedó sin efecto. Puedes buscar otro viaje en vueltapp.'
+      });
+    } catch(e) {}
+  });
+
+  deleteRow('Trips', p.tripId);
+  return { ok: true };
+}
+
+function cancelRequest(p) {
+  if (!p.callerId || !p.requestId) return { error: 'Datos incompletos' };
+  var requests = getRows('Requests');
+  var req = requests.find(function(r){ return r.id === p.requestId; });
+  if (!req) return { error: 'Solicitud no encontrada' };
+  if (req.requesterId !== p.callerId) return { error: 'Solo el pasajero puede cancelar su solicitud' };
+  if (req.status === 'rechazado' || req.status === 'cancelado') return { error: 'Esta solicitud ya no está activa' };
+
+  var trips = getRows('Trips');
+  var trip = trips.find(function(t){ return t.id === req.tripId; });
+  var today = new Date().toISOString().split('T')[0];
+  if (trip && trip.date < today) return { error: 'No se puede cancelar un viaje pasado' };
+
+  updateRow('Requests', req.id, { status: 'cancelado', updatedAt: new Date().toISOString() });
+
+  // Notificar al conductor solo si estaba aprobado
+  if (req.status === 'aprobado' && trip) {
+    var users = getRows('Users');
+    var driver = users.find(function(u){ return u.id === req.driverId; });
+    if (driver && driver.email) {
+      try {
+        MailApp.sendEmail({
+          to: driver.email,
+          subject: '⚠️ Pasajero canceló su cupo — ' + req.requesterName,
+          body: req.requesterName + ' canceló su cupo en tu viaje del ' + trip.date + ' a las ' + trip.time + '.\n' +
+            'Quedó un cupo libre. Puedes ver el detalle en vueltapp.'
+        });
+      } catch(e) {}
+    }
+  }
+
   return { ok: true };
 }
 
