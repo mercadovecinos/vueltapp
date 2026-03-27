@@ -907,7 +907,7 @@ function renderBalance(balances) {
     html += '<div style="font-size:.75rem;color:var(--muted);margin-top:2px">' + (iOwe ? 'Les debes' : 'Te deben') + '</div></div>';
     html += '<div style="display:flex;align-items:center;gap:12px">';
     html += '<div class="bal-amt ' + (iOwe ? 'bal-neg' : 'bal-pos') + '">' + fmtAmt + '</div>';
-    html += '<button class="btn btn-g btn-sm" onclick="openPay(' + i + ')">Pagado</button>';
+    if (!iOwe) html += '<button class="btn btn-g btn-sm" onclick="openPay(' + i + ')">Pagado</button>';
     html += '</div></div>';
   });
   document.getElementById('balance-content').innerHTML = html;
