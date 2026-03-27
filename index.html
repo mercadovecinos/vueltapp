@@ -583,9 +583,13 @@ function openTrip(tripId) {
   var isPast = trip.date < today;
   var route = trip.direction === 'salida' ? 'PBI → ' + trip.puebloPoint : trip.puebloPoint + ' → PBI';
 
+  var approvedPassengers = trip.requests ? trip.requests.filter(function(r){ return r.status === 'aprobado'; }) : [];
+  var canSeePassengers = isMine || (myReq && myReq.status === 'aprobado');
+
   var html = '<div class="mtitle">' + fmtDate(trip.date) + ' · ' + trip.time + '</div>';
   html += '<div style="font-size:1rem;margin-bottom:4px">' + route + '</div>';
-  html += '<div style="font-size:.85rem;color:var(--muted);margin-bottom:16px">' + (isMine ? 'Tu viaje' : 'Conductor: ' + trip.driverName + ' (P.' + trip.driverParcela + ')') + '</div>';
+  html += '<div style="font-size:.85rem;color:var(--muted);margin-bottom:' + (trip.note ? '8px' : '16px') + '">' + (isMine ? 'Tu viaje' : 'Conductor: ' + trip.driverName + ' (P.' + trip.driverParcela + ')') + '</div>';
+  if (trip.note) html += '<div style="font-size:.85rem;background:var(--bg);border-radius:8px;padding:8px 12px;margin-bottom:16px;color:var(--txt)">📝 ' + trip.note + '</div>';
   html += '<div class="divider"></div>';
 
   // Seats visual
@@ -595,7 +599,19 @@ function openTrip(tripId) {
     html += '<div class="seat" style="width:18px;height:18px;' + (i < approved ? 'background:var(--pa)' : '') + '"></div>';
   }
   html += '<span style="font-size:.85rem;margin-left:8px;color:var(--muted)">' + approved + '/' + trip.totalSeats + ' ocupados</span>';
-  html += '</div></div><div class="divider"></div>';
+  html += '</div></div>';
+
+  // Pasajeros visibles si eres driver o tienes cupo aprobado
+  if (canSeePassengers && approvedPassengers.length > 0) {
+    html += '<div style="margin-bottom:12px"><div style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Pasajeros</div>';
+    approvedPassengers.forEach(function(r) {
+      html += '<div style="font-size:.9rem;padding:4px 0">';
+      html += (r.requesterId === currentUser.id ? '👤 Tú' : '👤 ' + r.requesterName + ' · P.' + r.requesterParcela);
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<div class="divider"></div>';
 
   if (!isMine && !isPast) {
     if (!myReq) {
@@ -680,6 +696,8 @@ function renderPublishForm(prefill) {
     html += '<div class="sbtn' + (ps.seats === n ? ' on' : '') + '" onclick="selSeats(' + n + ',this)">' + n + '</div>';
   });
   html += '</div></div>';
+  html += '<div class="fg"><label>Nota para los pasajeros (opcional)</label>';
+  html += '<textarea id="pub-note" rows="2" placeholder="Ej: Salgo exacto a las 8am del portón">' + (ps.note || '') + '</textarea></div>';
   html += '<div id="pub-err" class="err"></div>';
   html += '<button class="btn btn-p" onclick="doPublish()">Publicar viaje</button>';
   document.getElementById('publish-content').innerHTML = html;
@@ -719,9 +737,11 @@ async function doPublish() {
   if (!publishState.seats) { err.textContent = 'Selecciona los cupos disponibles'; err.classList.add('on'); return; }
   if (date < toDateStr(new Date())) { err.textContent = 'La fecha debe ser hoy o en el futuro'; err.classList.add('on'); return; }
 
+  var note = (document.getElementById('pub-note').value || '').trim();
   var payload = {
     driverId: currentUser.id, driverName: currentUser.name, driverParcela: currentUser.parcela,
-    date: date, time: time, direction: publishState.dir, puebloPoint: pueblo, seats: publishState.seats
+    date: date, time: time, direction: publishState.dir, puebloPoint: pueblo, seats: publishState.seats,
+    note: note
   };
   var pubBtn = document.querySelector('#publish-content .btn-p');
   if (pubBtn) { pubBtn.textContent = 'Publicando…'; pubBtn.disabled = true; }
@@ -839,7 +859,9 @@ function renderMyData(myTrips, myReqs) {
       var pending = t.requests ? t.requests.filter(function(r){ return r.status === 'solicitado'; }) : [];
       html += '<div class="card">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start">';
-      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div><div style="font-size:.85rem;color:var(--muted)">' + route + ' · ' + t.totalSeats + ' cupos</div></div>';
+      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div><div style="font-size:.85rem;color:var(--muted)">' + route + ' · ' + t.totalSeats + ' cupos</div>';
+      if (t.note) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:2px">📝 ' + t.note + '</div>';
+      html += '</div>';
       html += '<div style="display:flex;gap:6px;align-items:center">';
       if (pending.length > 0) html += '<span class="tc-badge b-sol">' + pending.length + ' pendiente' + (pending.length>1?'s':'') + '</span>';
       html += '<button class="btn btn-d btn-sm" onclick="doCancelTrip(\'' + t.id + '\')">Cancelar</button>';
@@ -892,6 +914,41 @@ function renderMyData(myTrips, myReqs) {
       html += '</div>';
       if (r.status === 'rechazado' && r.driverComment) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:6px">"' + r.driverComment + '"</div>';
       html += '</div>';
+    });
+  }
+
+  // ── Historial (últimas 4 semanas) ──
+  var fourWeeksAgo = toDateStr(new Date(Date.now() - 28 * 24 * 60 * 60 * 1000));
+  var pastTrips = Array.isArray(myTrips) ? myTrips.filter(function(t){ return t.date < today && t.date >= fourWeeksAgo; }) : [];
+  var pastReqs  = Array.isArray(myReqs)  ? myReqs.filter(function(r){ return r.trip && r.trip.date < today && r.trip.date >= fourWeeksAgo; }) : [];
+  pastTrips.sort(function(a,b){ return b.date.localeCompare(a.date); });
+  pastReqs.sort(function(a,b){ return (b.trip ? b.trip.date : '').localeCompare(a.trip ? a.trip.date : ''); });
+
+  if (pastTrips.length > 0 || pastReqs.length > 0) {
+    html += '<div class="divider" style="margin:20px 0"></div>';
+    html += '<div class="section-title">Historial — últimas 4 semanas</div>';
+
+    pastTrips.forEach(function(t) {
+      var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
+      var pax = t.requests ? t.requests.filter(function(r){ return r.status === 'aprobado'; }).length : 0;
+      html += '<div class="card" style="opacity:.75">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div>';
+      html += '<div style="font-size:.85rem;color:var(--muted)">' + route + ' · ' + pax + ' pasajero' + (pax !== 1 ? 's' : '') + '</div></div>';
+      html += '<span class="tc-badge b-past">Conductor</span>';
+      html += '</div></div>';
+    });
+
+    pastReqs.forEach(function(r) {
+      var t = r.trip;
+      if (!t) return;
+      var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
+      html += '<div class="card" style="opacity:.75">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div>';
+      html += '<div style="font-size:.85rem;color:var(--muted)">' + route + ' con ' + t.driverName + '</div></div>';
+      html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + r.status + '</span>';
+      html += '</div></div>';
     });
   }
 

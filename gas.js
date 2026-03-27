@@ -88,7 +88,16 @@ function getRows(name) {
 
 function appendRow(name, obj) {
   var s = getSheet(name);
-  var headers = s.getRange(1,1,1,s.getLastColumn()).getValues()[0];
+  var lastCol = s.getLastColumn();
+  var headers = s.getRange(1, 1, 1, lastCol).getValues()[0];
+  // Auto-añadir columnas nuevas si no existen (migración automática)
+  Object.keys(obj).forEach(function(k) {
+    if (headers.indexOf(k) === -1) {
+      lastCol++;
+      s.getRange(1, lastCol).setValue(k);
+      headers.push(k);
+    }
+  });
   s.appendRow(headers.map(function(h){ return obj[h] !== undefined ? obj[h] : ''; }));
 }
 
@@ -191,7 +200,7 @@ function getTrips(p) {
       availableSeats: parseInt(t.totalSeats) - approved,
       requests: reqs.map(function(r){
         return { id: r.id, status: r.status, requesterId: r.requesterId,
-                 requesterName: r.requesterName, requesterParcela: r.requesterParcela };
+                 requesterName: r.requesterName, requesterParcela: r.requesterParcela, note: r.note || '' };
       })
     });
   });
@@ -200,7 +209,7 @@ function getTrips(p) {
 function addTrip(p) {
   var trip = { id: uid(), driverId: p.driverId, driverName: p.driverName, driverParcela: p.driverParcela,
     date: p.date, time: p.time, direction: p.direction, puebloPoint: p.puebloPoint,
-    totalSeats: parseInt(p.seats), createdAt: new Date().toISOString() };
+    totalSeats: parseInt(p.seats), note: p.note || '', createdAt: new Date().toISOString() };
   appendRow('Trips', trip);
   return { ok: true, trip: trip };
 }
@@ -211,7 +220,7 @@ function addTrips(p) {
   list.forEach(function(td){
     var trip = { id: uid(), driverId: td.driverId, driverName: td.driverName, driverParcela: td.driverParcela,
       date: td.date, time: td.time, direction: td.direction, puebloPoint: td.puebloPoint,
-      totalSeats: parseInt(td.seats), createdAt: new Date().toISOString() };
+      totalSeats: parseInt(td.seats), note: td.note || '', createdAt: new Date().toISOString() };
     appendRow('Trips', trip);
     created.push(trip);
   });
