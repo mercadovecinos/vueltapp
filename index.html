@@ -130,6 +130,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 .bal-pos{color:#065f46}
 .bal-neg{color:var(--danger)}
 
+/* ── Auth magic link ── */
+.auth-divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.8rem;margin:16px 0}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.magic-sent{text-align:center;padding:20px 0;color:var(--p);font-weight:600;font-size:.95rem}
+
 /* ── Misc ── */
 .divider{height:1px;background:var(--border);margin:14px 0}
 .empty{text-align:center;padding:40px 20px;color:var(--muted)}
@@ -155,6 +160,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
   <div class="g-btn-wrap" id="google-btn-wrap">
     <div id="google-signin-btn"></div>
     <div id="auth-err" class="err"></div>
+    <div class="auth-divider">o entra con tu email</div>
+    <div class="fg" style="margin-bottom:8px">
+      <input type="email" id="magic-email" placeholder="tu@email.com" style="font-size:1rem">
+    </div>
+    <button class="btn btn-o" id="magic-btn" onclick="sendMagicLink()">Enviar link de acceso</button>
+    <div id="magic-msg"></div>
   </div>
 
   <!-- Parcela picker — solo la primera vez -->
@@ -162,7 +173,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
     <div style="text-align:center;margin-bottom:24px">
       <div style="font-size:2rem;margin-bottom:8px">👋</div>
       <div style="font-weight:800;font-size:1.1rem">¡Bienvenido/a!</div>
-      <div style="color:var(--muted);font-size:.85rem;margin-top:6px">Es tu primera vez — ¿en qué parcela vives?</div>
+      <div style="color:var(--muted);font-size:.85rem;margin-top:6px">Es tu primera vez — completa tu perfil</div>
+    </div>
+    <div class="fg" id="fg-name" style="display:none">
+      <label>Tu nombre</label>
+      <input type="text" id="p-name" placeholder="Ej: Valentina Torres">
     </div>
     <div class="fg">
       <label>Tu parcela</label>
@@ -330,6 +345,8 @@ function setCache(k, d) { try { localStorage.setItem(k, JSON.stringify({ts:Date.
   // Restore session
   try { currentUser = JSON.parse(localStorage.getItem('vu_user')); } catch(e) {}
   if (currentUser) { enterApp(); return; }
+  // Verificar si viene con token de magic link en la URL
+  checkTokenInUrl();
   // GSI se inicializa vía onGoogleLibraryLoad cuando carga el script
 })();
 
@@ -448,6 +465,64 @@ async function prefetchAll() {
   } catch(e) {}
 }
 
+// ── Auth Magic Link ──
+var pendingMagicEmail = null;
+
+async function sendMagicLink() {
+  var email = (document.getElementById('magic-email').value || '').trim();
+  var msg = document.getElementById('magic-msg');
+  msg.textContent = '';
+  if (!email || !email.includes('@')) {
+    msg.textContent = 'Ingresa un email válido'; msg.style.color = 'var(--danger)'; return;
+  }
+  var btn = document.getElementById('magic-btn');
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  var res = await api('requestMagicLink', { email: email });
+  btn.disabled = false; btn.textContent = 'Enviar link de acceso';
+  if (res.error) { msg.textContent = res.error; msg.style.color = 'var(--danger)'; return; }
+  msg.innerHTML = '✅ Link enviado a <strong>' + email + '</strong><br><small style="color:var(--muted)">Revisa tu bandeja (y spam). Válido 15 min.</small>';
+  msg.style.color = 'var(--p)';
+}
+
+async function checkTokenInUrl() {
+  var params = new URLSearchParams(window.location.search);
+  var token = params.get('token');
+  if (!token) return false;
+  // Limpiar token de la URL sin recargar
+  history.replaceState(null, '', window.location.pathname);
+  document.getElementById('auth').style.display = 'flex';
+  document.getElementById('google-btn-wrap').style.display = 'none';
+  var wrap = document.getElementById('parcela-wrap');
+  wrap.style.display = 'block';
+  wrap.querySelector('.parcela-wrap > div').lastElementChild.textContent = 'Verificando link…';
+  var res = await api('verifyMagicToken', { token: token });
+  if (res.error) {
+    wrap.style.display = 'none';
+    document.getElementById('google-btn-wrap').style.display = 'block';
+    var msg = document.getElementById('magic-msg');
+    msg.textContent = res.error; msg.style.color = 'var(--danger)';
+    return true;
+  }
+  if (res.ok && res.user) {
+    currentUser = res.user;
+    localStorage.setItem('vu_user', JSON.stringify(currentUser));
+    wrap.style.display = 'none';
+    enterApp();
+    return true;
+  }
+  if (res.needsProfile) {
+    // Usuario nuevo — pedir nombre + parcela
+    pendingMagicEmail = res.email;
+    wrap.querySelector('div[style*="primera vez"]').textContent = 'Completa tu perfil para entrar';
+    document.getElementById('fg-name').style.display = 'block';
+    var sel = document.getElementById('p-parcela');
+    sel.innerHTML = '<option value="">Selecciona…</option>';
+    for (var i = 1; i <= 50; i++) sel.innerHTML += '<option value="'+i+'">Parcela '+i+'</option>';
+    return true;
+  }
+  return true;
+}
+
 // ── Auth Google ──
 var pendingGoogle = null;
 
@@ -481,7 +556,15 @@ async function completeParcela() {
   var err = document.getElementById('parcela-err');
   err.classList.remove('on');
   if (!parcela) { err.textContent = 'Selecciona tu parcela'; err.classList.add('on'); return; }
-  var res = await api('googleAuth', { googleId: pendingGoogle.googleId, email: pendingGoogle.email, name: pendingGoogle.name, parcela: parcela });
+  var res;
+  if (pendingMagicEmail) {
+    var name = (document.getElementById('p-name').value || '').trim();
+    if (!name) { err.textContent = 'Ingresa tu nombre'; err.classList.add('on'); return; }
+    // Crear usuario nuevo via magic link (token ya fue verificado, usamos email guardado)
+    res = await api('createEmailUser', { email: pendingMagicEmail, name: name, parcela: parcela });
+  } else {
+    res = await api('googleAuth', { googleId: pendingGoogle.googleId, email: pendingGoogle.email, name: pendingGoogle.name, parcela: parcela });
+  }
   if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
   currentUser = res.user;
   localStorage.setItem('vu_user', JSON.stringify(currentUser));
@@ -496,7 +579,7 @@ function logout() {
   currentUser = null;
   myTripsData = null; myReqsData = null; balanceData = null; tripsCache = null;
   // Limpiar estado pendiente para no filtrar datos entre usuarios
-  pendingGoogle = null; pendingRejectId = null; pendingPayData = null; pendingRepeatBase = null; pendingRequestTripId = null;
+  pendingGoogle = null; pendingMagicEmail = null; pendingRejectId = null; pendingPayData = null; pendingRepeatBase = null; pendingRequestTripId = null;
   document.getElementById('main').classList.remove('on');
   document.getElementById('auth').style.display = '';
   // Re-inicializar botón de Google

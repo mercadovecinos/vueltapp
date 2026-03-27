@@ -52,10 +52,11 @@ function getSheet(name) {
   if (!s) {
     s = ss.insertSheet(name);
     var h = {
-      Users:    ['id','name','email','googleId','parcela','createdAt'],
-      Trips:    ['id','driverId','driverName','driverParcela','date','time','direction','puebloPoint','totalSeats','createdAt'],
-      Requests: ['id','tripId','driverId','driverEmail','driverName','requesterId','requesterEmail','requesterName','requesterParcela','status','token','driverComment','createdAt','updatedAt'],
-      Payments: ['id','fromUserId','toUserId','amount','createdAt']
+      Users:      ['id','name','email','googleId','parcela','createdAt'],
+      Trips:      ['id','driverId','driverName','driverParcela','date','time','direction','puebloPoint','totalSeats','createdAt'],
+      Requests:   ['id','tripId','driverId','driverEmail','driverName','requesterId','requesterEmail','requesterName','requesterParcela','status','token','driverComment','createdAt','updatedAt'],
+      Payments:   ['id','fromUserId','toUserId','amount','createdAt'],
+      AuthTokens: ['token','email','expiresAt']
     };
     if (h[name]) s.getRange(1,1,1,h[name].length).setValues([h[name]]);
   }
@@ -151,8 +152,11 @@ function doGet(e) {
     else if (action === 'getMyRequests') result = getMyRequests(p);
     else if (action === 'getBalance')    result = getBalance(p);
     else if (action === 'addPayment')    result = addPayment(p);
-    else if (action === 'cancelTrip')    result = cancelTrip(p);
-    else if (action === 'cancelRequest') result = cancelRequest(p);
+    else if (action === 'cancelTrip')      result = cancelTrip(p);
+    else if (action === 'cancelRequest')   result = cancelRequest(p);
+    else if (action === 'requestMagicLink') result = requestMagicLink(p);
+    else if (action === 'verifyMagicToken') result = verifyMagicToken(p);
+    else if (action === 'createEmailUser')  result = createEmailUser(p);
     else if (action === 'ping')          result = pingAction(p);
     else result = { error: 'Acción desconocida' };
   } catch(err) {
@@ -485,6 +489,76 @@ function cancelRequest(p) {
   }
 
   return { ok: true };
+}
+
+function requestMagicLink(p) {
+  if (!p.email) return { error: 'Ingresa tu email' };
+  var email = p.email.trim().toLowerCase();
+  // Limpiar tokens viejos de este email
+  var s = getSheet('AuthTokens');
+  var data = s.getDataRange().getValues();
+  var headers = data[0];
+  var emailCol = headers.indexOf('email');
+  var expiresCol = headers.indexOf('expiresAt');
+  var now = new Date();
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (data[i][emailCol] === email || new Date(data[i][expiresCol]) < now) {
+      s.deleteRow(i + 1);
+    }
+  }
+  // Crear token nuevo (expira en 15 min)
+  var token = uid();
+  var expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+  appendRow('AuthTokens', { token: token, email: email, expiresAt: expiresAt });
+
+  var appUrl = 'https://mercadovecinos.github.io/vueltapp/?token=' + token;
+  try {
+    MailApp.sendEmail({
+      to: email,
+      subject: '🛻 Tu link de acceso a vueltapp',
+      body: 'Haz click en el link para entrar a vueltapp (válido por 15 minutos):\n\n' + appUrl +
+        '\n\nSi no pediste esto, ignora este mensaje.'
+    });
+  } catch(e) {
+    return { error: 'No se pudo enviar el email: ' + e.toString() };
+  }
+  return { ok: true };
+}
+
+function verifyMagicToken(p) {
+  if (!p.token) return { error: 'Token inválido' };
+  var tokens = getRows('AuthTokens');
+  var entry = tokens.find(function(t){ return t.token === p.token; });
+  if (!entry) return { error: 'Link inválido o ya fue usado' };
+  if (new Date(entry.expiresAt) < new Date()) return { error: 'El link expiró — solicita uno nuevo' };
+
+  // Eliminar token (uso único)
+  deleteRow('AuthTokens', entry.token);
+
+  var email = entry.email;
+  var users = getRows('Users');
+  var user = users.find(function(u){ return u.email === email; });
+  if (user) {
+    return { ok: true, user: { id: user.id, name: user.name, email: user.email, parcela: user.parcela } };
+  }
+  // Usuario nuevo — necesita nombre y parcela
+  if (p.name && p.parcela) {
+    var newUser = { id: uid(), name: p.name.trim(), email: email, googleId: '', parcela: p.parcela, createdAt: new Date().toISOString() };
+    appendRow('Users', newUser);
+    return { ok: true, user: { id: newUser.id, name: newUser.name, email: newUser.email, parcela: newUser.parcela } };
+  }
+  return { needsProfile: true, email: email };
+}
+
+function createEmailUser(p) {
+  if (!p.email || !p.name || !p.parcela) return { error: 'Datos incompletos' };
+  var users = getRows('Users');
+  // Verificar que no exista ya (por si acaso)
+  var existing = users.find(function(u){ return u.email === p.email.trim().toLowerCase(); });
+  if (existing) return { ok: true, user: { id: existing.id, name: existing.name, email: existing.email, parcela: existing.parcela } };
+  var newUser = { id: uid(), name: p.name.trim(), email: p.email.trim().toLowerCase(), googleId: '', parcela: p.parcela, createdAt: new Date().toISOString() };
+  appendRow('Users', newUser);
+  return { ok: true, user: { id: newUser.id, name: newUser.name, email: newUser.email, parcela: newUser.parcela } };
 }
 
 function pingAction(p) {
