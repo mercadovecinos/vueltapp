@@ -247,7 +247,7 @@ function requestTrip(p) {
   var req = { id: uid(), tripId: p.tripId, driverId: trip.driverId, driverEmail: driverEmail,
     driverName: trip.driverName, requesterId: requester.id, requesterEmail: requester.email,
     requesterName: requester.name, requesterParcela: requester.parcela,
-    status: 'solicitado', token: token, driverComment: '',
+    status: 'solicitado', token: token, driverComment: '', note: p.note || '',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 
   // Guardar solo después de validar todo
@@ -265,6 +265,7 @@ function requestTrip(p) {
       subject: '🛻 Solicitud de viaje — ' + req.requesterName,
       body: req.requesterName + ' (Parcela ' + req.requesterParcela + ') quiere unirse a tu viaje del ' +
         trip.date + ' a las ' + trip.time + '.\nRuta: ' + route +
+        (req.note ? '\n\nNota del pasajero: "' + req.note + '"' : '') +
         '\n\nResponde desde los botones o directamente en vueltapp (el pasajero recibirá un mail con tu respuesta).' +
         '\n\n✅ APROBAR:\n' + approveLink + '\n\n❌ RECHAZAR:\n' + rejectLink
     });

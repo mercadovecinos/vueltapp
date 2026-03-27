@@ -243,6 +243,22 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
   </div>
 </div>
 
+<!-- ── Request Modal ── -->
+<div class="overlay" id="modal-request" onclick="if(event.target===this)closeModal('request')">
+  <div class="modal">
+    <div class="mhandle"></div>
+    <div class="mtitle">Solicitar cupo</div>
+    <div id="request-trip-info" style="font-size:.9rem;color:var(--muted);margin-bottom:12px"></div>
+    <div class="fg"><label>Nota para el conductor (opcional)</label>
+      <textarea id="request-note" rows="3" placeholder="Ej: vuelvo también a las 6pm, ¿podemos coordinar?"></textarea>
+    </div>
+    <div class="row-btns">
+      <button class="btn btn-g btn-sm" onclick="closeModal('request')">Cancelar</button>
+      <button class="btn btn-p btn-sm" id="request-submit-btn" onclick="confirmRequest()">Solicitar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Reject Modal ── -->
 <div class="overlay" id="modal-reject" onclick="if(event.target===this)closeModal('reject')">
   <div class="modal">
@@ -480,7 +496,7 @@ function logout() {
   currentUser = null;
   myTripsData = null; myReqsData = null; balanceData = null; tripsCache = null;
   // Limpiar estado pendiente para no filtrar datos entre usuarios
-  pendingGoogle = null; pendingRejectId = null; pendingPayData = null; pendingRepeatBase = null;
+  pendingGoogle = null; pendingRejectId = null; pendingPayData = null; pendingRepeatBase = null; pendingRequestTripId = null;
   document.getElementById('main').classList.remove('on');
   document.getElementById('auth').style.display = '';
   // Re-inicializar botón de Google
@@ -602,26 +618,41 @@ function openTrip(tripId) {
   openModal('trip');
 }
 
-async function doRequest(tripId, driverId) {
-  closeModal('trip');
-  // Find driver email — we need to reload my trips to get it, let's pass current email
+var pendingRequestTripId = null;
+
+function doRequest(tripId) {
   var trip = tripsCache && tripsCache.find(function(t) { return t.id === tripId; });
   if (!trip) return;
+  pendingRequestTripId = tripId;
+  var route = trip.direction === 'salida' ? 'PBI → ' + trip.puebloPoint : trip.puebloPoint + ' → PBI';
+  document.getElementById('request-trip-info').textContent = fmtDate(trip.date) + ' · ' + trip.time + ' · ' + route + ' con ' + trip.driverName;
+  document.getElementById('request-note').value = '';
+  document.getElementById('request-submit-btn').disabled = false;
+  closeModal('trip');
+  openModal('request');
+}
+
+async function confirmRequest() {
+  var tripId = pendingRequestTripId;
+  if (!tripId) return;
+  var note = document.getElementById('request-note').value.trim();
+  var btn = document.getElementById('request-submit-btn');
+  btn.disabled = true;
+  closeModal('request');
   toast('Enviando solicitud…');
   var res = await api('requestTrip', {
     tripId: tripId,
     requesterId: currentUser.id,
-    requesterEmail: currentUser.email,
-    requesterName: currentUser.name,
-    requesterParcela: currentUser.parcela,
-    driverEmail: trip.driverEmail || '' // may not be in cache; GAS looks it up from Users
+    note: note
   });
+  pendingRequestTripId = null;
   if (res.error) { toast('Error: ' + res.error); return; }
   if (res.mailError) {
-    toast('✅ Solicitud enviada — avisa al conductor directo (fallo el mail)', 4000);
+    toast('✅ Solicitud enviada — avisa al conductor directo (falló el mail)', 4000);
   } else {
     toast('✅ Solicitud enviada — el conductor recibirá un mail y te responderá por aquí', 4000);
   }
+  myReqsData = null;
   loadTrips();
 }
 
@@ -819,7 +850,9 @@ function renderMyData(myTrips, myReqs) {
         t.requests.forEach(function(r) {
           html += '<div class="req-item"><div style="display:flex;justify-content:space-between;align-items:center">';
           html += '<div><div style="font-size:.9rem;font-weight:600">' + r.requesterName + ' · P.' + r.requesterParcela + '</div>';
-          html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + r.status + '</span></div>';
+          html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + r.status + '</span>';
+          if (r.note) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:3px">💬 ' + r.note + '</div>';
+          html += '</div>';
           if (r.status === 'solicitado') {
             html += '<div style="display:flex;gap:6px">';
             html += '<button class="btn btn-p btn-sm" onclick="appRespond(\'' + r.id + '\',true)">✓</button>';
