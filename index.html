@@ -931,6 +931,7 @@ async function confirmPay() {
   var res = await api('addPayment', {
     fromUserId: d.iOwe ? currentUser.id : d.otherId,
     toUserId:   d.iOwe ? d.otherId : currentUser.id,
+    callerId:   currentUser.id,
     amount: amount
   });
   closeModal('pay');

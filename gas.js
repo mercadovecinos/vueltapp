@@ -15,6 +15,35 @@ function setup() {
   Logger.log('Hojas creadas.');
 }
 
+// Ejecutar una vez después de desplegar para autorizar todos los scopes (MailApp, Sheets)
+function autorizar() {
+  SpreadsheetApp.getActiveSpreadsheet();
+  Logger.log('Autorización OK. Cuota de mail restante: ' + MailApp.getRemainingDailyQuota());
+}
+
+// Diagnóstico: muestra todos los usuarios registrados y sus emails
+function diagnosticoUsers() {
+  var users = getRows('Users');
+  users.forEach(function(u) {
+    Logger.log('Parcela ' + u.parcela + ' | ' + u.name + ' | email: [' + u.email + '] | id: ' + u.id);
+  });
+}
+
+// Diagnóstico: envía mail de prueba a la dirección que pongas aquí
+function testMail() {
+  var destinatario = 'TU_EMAIL@gmail.com'; // ← cambia por el email del conductor
+  try {
+    MailApp.sendEmail({
+      to: destinatario,
+      subject: '🛻 Test vueltapp',
+      body: 'Si ves esto, MailApp funciona correctamente desde GAS.'
+    });
+    Logger.log('Mail enviado OK a ' + destinatario);
+  } catch(e) {
+    Logger.log('ERROR enviando mail: ' + e.toString());
+  }
+}
+
 // ---- Utilidades de hoja ----
 
 function getSheet(name) {
@@ -100,6 +129,7 @@ function doGet(e) {
     else if (action === 'getMyRequests') result = getMyRequests(p);
     else if (action === 'getBalance')    result = getBalance(p);
     else if (action === 'addPayment')    result = addPayment(p);
+    else if (action === 'ping')          result = pingAction(p);
     else result = { error: 'Acción desconocida' };
   } catch(err) {
     result = { error: err.toString() };
@@ -193,6 +223,7 @@ function requestTrip(p) {
   var users = getRows('Users');
   var driver = users.find(function(u){ return u.id === trip.driverId; });
   var driverEmail = driver ? driver.email : '';
+  Logger.log('requestTrip — driverId buscado: ' + trip.driverId + ' | driver encontrado: ' + (driver ? driver.name : 'NO') + ' | email: [' + driverEmail + ']');
 
   var token = uid();
   var req = { id: uid(), tripId: p.tripId, driverId: trip.driverId, driverEmail: driverEmail,
@@ -354,7 +385,21 @@ function getBalance(p) {
 }
 
 function addPayment(p) {
+  // Solo el acreedor (toUserId) puede registrar el pago
+  if (!p.callerId || p.callerId !== p.toUserId) return { error: 'Solo quien recibe el pago puede marcarlo como pagado' };
+  var amount = parseInt(p.amount);
+  if (!amount || amount <= 0) return { error: 'Monto inválido' };
   appendRow('Payments', { id: uid(), fromUserId: p.fromUserId, toUserId: p.toUserId,
-    amount: parseInt(p.amount), createdAt: new Date().toISOString() });
+    amount: amount, createdAt: new Date().toISOString() });
   return { ok: true };
+}
+
+function pingAction(p) {
+  var v = { version: 3, ts: new Date().toISOString() };
+  if (!p.to) return v;
+  // Test mail desde doGet
+  var err = null;
+  try { MailApp.sendEmail({ to: p.to, subject: 'vueltapp ping doGet ' + new Date().toISOString(), body: 'Mail enviado desde doGet. Versión 3.' }); }
+  catch(e) { err = e.toString(); }
+  return Object.assign(v, { sentTo: p.to, mailError: err });
 }
