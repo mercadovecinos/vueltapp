@@ -52,7 +52,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 .topbar-logo em{color:var(--pa);font-style:normal}
 .topbar-user{font-size:.75rem;opacity:.8}
 .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid var(--border);display:flex;z-index:50}
-.ni{flex:1;display:flex;flex-direction:column;align-items:center;padding:10px 0 14px;cursor:pointer;color:var(--muted);font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;border:none;background:transparent;transition:color .15s}
+.ni{flex:1;display:flex;flex-direction:column;align-items:center;padding:10px 0 14px;cursor:pointer;color:var(--muted);font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;border:none;background:transparent;transition:color .15s;position:relative}
 .ni.on{color:var(--p)}
 .ni-icon{font-size:1.3rem;margin-bottom:2px}
 .ni .badge-dot{width:7px;height:7px;background:var(--pa);border-radius:50%;position:absolute;top:8px;right:calc(50% - 16px)}
@@ -223,7 +223,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
       <span class="ni-icon">➕</span>Publicar
     </button>
     <button class="ni" id="ni-my" onclick="showPage('my')">
-      <span class="ni-icon">🚗</span>Mis viajes
+      <span class="ni-icon">🚗</span>Mis viajes<span class="badge-dot" id="my-badge-dot" style="display:none"></span>
     </button>
     <button class="ni" id="ni-balance" onclick="showPage('balance')">
       <span class="ni-icon">💰</span>Balance
@@ -423,7 +423,7 @@ async function prefetchAll() {
     ]);
     if (!results[0].error) setCache(cacheKey(w0.start, w0.end), results[0]);
     if (!results[1].error) { setCache(cacheKey(w1.start, w1.end), results[1]); tripsCache = results[1]; }
-    if (!results[2].error) myTripsData = results[2];
+    if (!results[2].error) { myTripsData = results[2]; updatePendingBadge(myTripsData); }
     if (!results[3].error) myReqsData = results[3];
     if (!results[4].error) balanceData = results[4].balances;
   } catch(e) {}
@@ -772,7 +772,17 @@ async function loadMyData() {
   renderMyData(tripsRes.error ? (myTripsData||[]) : tripsRes, reqsRes.error ? (myReqsData||[]) : reqsRes);
 }
 
+function updatePendingBadge(myTrips) {
+  var dot = document.getElementById('my-badge-dot');
+  if (!dot) return;
+  var hasPending = Array.isArray(myTrips) && myTrips.some(function(t) {
+    return t.requests && t.requests.some(function(r) { return r.status === 'solicitado'; });
+  });
+  dot.style.display = hasPending ? 'block' : 'none';
+}
+
 function renderMyData(myTrips, myReqs) {
+  updatePendingBadge(myTrips);
   var html = '';
   var today = toDateStr(new Date());
 
