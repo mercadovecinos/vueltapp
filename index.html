@@ -130,6 +130,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 .bal-pos{color:#065f46}
 .bal-neg{color:var(--danger)}
 
+/* ── Repeat week ── */
+.repeat-trip-card{padding:12px 14px;border:2px solid var(--border);border-radius:var(--r);background:#fff;cursor:pointer;transition:.15s;user-select:none;margin-bottom:8px}
+.repeat-trip-card.selected{border-color:var(--p);background:#f0f8f2}
+.repeat-trip-card .rt-row{display:flex;justify-content:space-between;align-items:center}
+.repeat-trip-card .rt-check{width:22px;height:22px;border:2px solid var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;transition:.15s}
+.repeat-trip-card.selected .rt-check{border-color:var(--p);background:var(--p);color:#fff}
+
 /* ── Auth magic link ── */
 .auth-divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.8rem;margin:16px 0}
 .auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
@@ -208,6 +215,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
   <!-- Publicar -->
   <div class="page" id="page-publish">
     <div class="page-title">Publicar viaje</div>
+    <div id="repeat-week-banner"></div>
     <div id="publish-content"></div>
   </div>
 
@@ -285,6 +293,21 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
     <div class="row-btns">
       <button class="btn btn-g btn-sm" onclick="closeModal('reject')">Cancelar</button>
       <button class="btn btn-d btn-sm" onclick="confirmReject()">Confirmar rechazo</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Repeat Week Modal -->
+<div class="overlay" id="modal-repeat" onclick="if(event.target===this)closeModal('repeat')">
+  <div class="modal">
+    <div class="mhandle"></div>
+    <div class="mtitle">Repetir semana pasada</div>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:14px">Selecciona los viajes que quieres publicar esta semana:</p>
+    <div id="repeat-list"></div>
+    <div class="row-btns" style="margin-top:4px">
+      <button class="btn btn-g btn-sm" onclick="closeModal('repeat')">Cancelar</button>
+      <button class="btn btn-p" id="repeat-confirm-btn" onclick="confirmRepeatWeek()">Crear viajes</button>
     </div>
   </div>
 </div>
@@ -403,7 +426,7 @@ function showPage(name) {
   document.getElementById('page-' + name).classList.add('on');
   document.getElementById('ni-' + name).classList.add('on');
   if (name === 'trips') loadTrips();
-  if (name === 'publish') renderPublishForm();
+  if (name === 'publish') { renderRepeatBanner(); renderPublishForm(); }
   if (name === 'my') loadMyData();
   if (name === 'balance') loadBalance();
   if (name === 'profile') renderProfile();
@@ -753,6 +776,100 @@ async function confirmRequest() {
   }
   myReqsData = null;
   loadTrips();
+}
+
+// ── Repeat last week ──
+var repeatCandidates = [];
+
+function getWeekMonday(offsetWeeks) {
+  var d = new Date();
+  var day = d.getDay();
+  var diffToMon = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + diffToMon + offsetWeeks * 7);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+async function openRepeatLastWeek() {
+  var trips = myTripsData;
+  if (!trips) {
+    var res = await api('getMyTrips', { userId: currentUser.id });
+    if (res.error || !Array.isArray(res)) { toast('No se pudieron cargar tus viajes'); return; }
+    myTripsData = res; trips = res;
+  }
+  var lastMon = getWeekMonday(-1);
+  var lastSun = new Date(lastMon); lastSun.setDate(lastMon.getDate() + 6);
+  var lms = toDateStr(lastMon), lss = toDateStr(lastSun);
+  var lastWeekTrips = trips.filter(function(t){ return t.date >= lms && t.date <= lss; });
+  lastWeekTrips.sort(function(a,b){ return (a.date+a.time).localeCompare(b.date+b.time); });
+  if (lastWeekTrips.length === 0) {
+    toast('No publicaste viajes la semana pasada'); return;
+  }
+  // Shift dates +7 and store as candidates
+  repeatCandidates = lastWeekTrips.map(function(t, i) {
+    var d = new Date(t.date + 'T12:00:00');
+    d.setDate(d.getDate() + 7);
+    return { idx: i, orig: t, newDate: toDateStr(d), selected: true };
+  });
+  var html = '';
+  repeatCandidates.forEach(function(c) {
+    var route = c.orig.direction === 'salida' ? 'PBI → ' + c.orig.puebloPoint : c.orig.puebloPoint + ' → PBI';
+    html += '<div class="repeat-trip-card selected" id="rtc-' + c.idx + '" onclick="toggleRepeatCard(' + c.idx + ')">';
+    html += '<div class="rt-row">';
+    html += '<div><div style="font-weight:700;font-size:.95rem">' + fmtDate(c.newDate) + ' · ' + c.orig.time + '</div>';
+    html += '<div style="font-size:.82rem;color:var(--muted)">' + route + ' · ' + c.orig.totalSeats + ' cupos</div>';
+    if (c.orig.note) html += '<div style="font-size:.78rem;color:var(--muted);margin-top:2px">📝 ' + c.orig.note + '</div>';
+    html += '</div>';
+    html += '<div class="rt-check">✓</div>';
+    html += '</div></div>';
+  });
+  document.getElementById('repeat-list').innerHTML = html;
+  updateRepeatBtn();
+  document.getElementById('modal-repeat').classList.add('on');
+}
+
+function toggleRepeatCard(idx) {
+  repeatCandidates[idx].selected = !repeatCandidates[idx].selected;
+  var card = document.getElementById('rtc-' + idx);
+  card.classList.toggle('selected', repeatCandidates[idx].selected);
+  card.querySelector('.rt-check').textContent = repeatCandidates[idx].selected ? '✓' : '';
+  updateRepeatBtn();
+}
+
+function updateRepeatBtn() {
+  var count = repeatCandidates.filter(function(c){ return c.selected; }).length;
+  var btn = document.getElementById('repeat-confirm-btn');
+  btn.textContent = count > 0 ? 'Crear ' + count + ' viaje' + (count > 1 ? 's' : '') : 'Selecciona al menos uno';
+  btn.disabled = count === 0;
+}
+
+async function confirmRepeatWeek() {
+  var selected = repeatCandidates.filter(function(c){ return c.selected; });
+  if (selected.length === 0) return;
+  var btn = document.getElementById('repeat-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Creando…';
+  var trips = selected.map(function(c) {
+    return {
+      driverId: currentUser.id, driverName: currentUser.name, driverParcela: currentUser.parcela,
+      date: c.newDate, time: c.orig.time, direction: c.orig.direction,
+      puebloPoint: c.orig.puebloPoint, seats: c.orig.totalSeats, note: c.orig.note || ''
+    };
+  });
+  var res = await api('addTrips', { trips: JSON.stringify(trips) });
+  closeModal('repeat');
+  if (res.error) { toast('Error: ' + res.error); return; }
+  myTripsData = null; // forzar recarga
+  toast('✅ ' + selected.length + ' viaje' + (selected.length > 1 ? 's creados' : ' creado'));
+  showPage('my');
+}
+
+function renderRepeatBanner() {
+  var el = document.getElementById('repeat-week-banner');
+  if (!el) return;
+  el.innerHTML = '<div class="card" style="background:#f0f8f2;border:none;display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;cursor:pointer" onclick="openRepeatLastWeek()">' +
+    '<div><div style="font-weight:700;font-size:.9rem">🔁 Repetir semana pasada</div>' +
+    '<div style="font-size:.78rem;color:var(--muted)">Publica los mismos viajes de la semana anterior</div></div>' +
+    '<span style="font-size:1.2rem;color:var(--p)">›</span></div>';
 }
 
 // ── Publish page ──
