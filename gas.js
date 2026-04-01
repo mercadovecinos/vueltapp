@@ -54,7 +54,7 @@ function getSheet(name) {
     var h = {
       Users:      ['id','name','email','googleId','parcela','createdAt'],
       Trips:      ['id','driverId','driverName','driverParcela','date','time','direction','puebloPoint','totalSeats','createdAt'],
-      Requests:   ['id','tripId','driverId','driverEmail','driverName','requesterId','requesterEmail','requesterName','requesterParcela','status','token','driverComment','createdAt','updatedAt'],
+      Requests:   ['id','tripId','driverId','driverEmail','driverName','requesterId','requesterEmail','requesterName','requesterParcela','status','token','driverComment','note','createdAt','updatedAt'],
       Payments:   ['id','fromUserId','toUserId','amount','createdAt'],
       AuthTokens: ['token','email','expiresAt']
     };
@@ -386,12 +386,14 @@ function getBalance(p) {
     var trip = trips.find(function(t){ return t.id === r.tripId; });
     if (!trip || trip.date > today) return;
     var otherId, otherName, otherParcela, delta;
+    // Fallback: si driverId está vacío en el request, buscarlo desde el viaje
+    var driverId = r.driverId || (trip ? trip.driverId : '');
     if (r.requesterId === userId) {
-      otherId = r.driverId; otherName = r.driverName;
-      var d = users.find(function(u){ return u.id === r.driverId; });
+      otherId = driverId; otherName = r.driverName;
+      var d = users.find(function(u){ return u.id === driverId; });
       otherParcela = d ? d.parcela : '?';
       delta = -2000; // yo debo
-    } else if (r.driverId === userId) {
+    } else if (driverId === userId) {
       otherId = r.requesterId; otherName = r.requesterName;
       var d = users.find(function(u){ return u.id === r.requesterId; });
       otherParcela = d ? d.parcela : '?';

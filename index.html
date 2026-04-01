@@ -685,8 +685,9 @@ function openTrip(tripId) {
   var isMine = trip.driverId === currentUser.id;
   var myReq = trip.requests && trip.requests.find(function(r) { return r.requesterId === currentUser.id; });
   var approved = trip.requests ? trip.requests.filter(function(r){return r.status==='aprobado';}).length : 0;
-  var today = toDateStr(new Date());
-  var isPast = trip.date < today;
+  var now = new Date();
+  var tripDateTime = new Date(trip.date + 'T' + (trip.time || '23:59') + ':00');
+  var isPast = tripDateTime < now;
   var route = trip.direction === 'salida' ? 'PBI → ' + trip.puebloPoint : trip.puebloPoint + ' → PBI';
 
   var approvedPassengers = trip.requests ? trip.requests.filter(function(r){ return r.status === 'aprobado'; }) : [];
@@ -878,9 +879,9 @@ function renderPublishForm(prefill) {
   var defaultDate = new Date(today); defaultDate.setDate(today.getDate() + 1);
   var ps = prefill || {};
   var html = '';
-  html += '<div class="fg"><label>Dirección</label><div class="dir-grid">';
-  html += '<div class="dbtn' + (ps.dir === 'salida' ? ' on' : '') + '" onclick="selDir(\'salida\',this)">🛻 Salida<br><small style="font-weight:400;font-size:.75rem">PBI → Pueblo</small></div>';
-  html += '<div class="dbtn' + (ps.dir === 'regreso' ? ' on' : '') + '" onclick="selDir(\'regreso\',this)">🏡 Regreso<br><small style="font-weight:400;font-size:.75rem">Pueblo → PBI</small></div>';
+  html += '<div class="fg"><label>¿A dónde vas? <span style="color:var(--danger)">*</span></label><div class="dir-grid">';
+  html += '<div class="dbtn' + (ps.dir === 'salida' ? ' on' : '') + '" onclick="selDir(\'salida\',this)"><span style="font-size:1.3rem">🛻</span><br><strong>Salida</strong><br><small style="font-weight:400;font-size:.75rem;color:var(--muted)">PBI → Pueblo</small></div>';
+  html += '<div class="dbtn' + (ps.dir === 'regreso' ? ' on' : '') + '" onclick="selDir(\'regreso\',this)"><span style="font-size:1.3rem">🏡</span><br><strong>Regreso</strong><br><small style="font-weight:400;font-size:.75rem;color:var(--muted)">Pueblo → PBI</small></div>';
   html += '</div></div>';
   html += '<div class="fg"><label>Punto de encuentro</label><select id="pub-pueblo" onchange="onPuebloChange()">';
   html += '<option value="">Selecciona un punto…</option>';
@@ -952,6 +953,9 @@ async function doPublish() {
     return;
   }
 
+  // Invalidar caché de viajes para que el viaje publicado aparezca de inmediato
+  Object.keys(localStorage).filter(function(k){ return k.startsWith('vu_t_'); }).forEach(function(k){ localStorage.removeItem(k); });
+  tripsCache = null;
   // Show success + repeat prompt
   renderRepeatPrompt({ dir: publishState.dir, time: time, pueblo: pueblo, seats: publishState.seats, publishedDate: date });
 }
@@ -1000,6 +1004,8 @@ async function doRepeatDays() {
   var res = await api('addTrips', { trips: JSON.stringify(trips) });
   if (res.error) { toast('Error: ' + res.error); if (btn) { btn.textContent = 'Agregar días seleccionados'; btn.disabled = false; } return; }
   toast('✅ ' + trips.length + ' viaje' + (trips.length > 1 ? 's' : '') + ' publicado' + (trips.length > 1 ? 's' : ''));
+  Object.keys(localStorage).filter(function(k){ return k.startsWith('vu_t_'); }).forEach(function(k){ localStorage.removeItem(k); });
+  tripsCache = null;
   goToTripsAtDate(trips[0].date);
 }
 
