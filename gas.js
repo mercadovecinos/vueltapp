@@ -56,7 +56,7 @@ function getSheet(name) {
       Trips:      ['id','driverId','driverName','driverParcela','date','time','direction','puebloPoint','totalSeats','createdAt'],
       Requests:   ['id','tripId','driverId','driverEmail','driverName','requesterId','requesterEmail','requesterName','requesterParcela','status','token','driverComment','note','createdAt','updatedAt'],
       Payments:   ['id','fromUserId','toUserId','amount','createdAt'],
-      AuthTokens: ['token','email','expiresAt']
+      AuthTokens: ['id','email','expiresAt']
     };
     if (h[name]) s.getRange(1,1,1,h[name].length).setValues([h[name]]);
   }
@@ -511,7 +511,7 @@ function requestMagicLink(p) {
   // Crear token nuevo (expira en 15 min)
   var token = uid();
   var expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
-  appendRow('AuthTokens', { token: token, email: email, expiresAt: expiresAt });
+  appendRow('AuthTokens', { id: token, email: email, expiresAt: expiresAt });
 
   var appUrl = 'https://mercadovecinos.github.io/vueltapp/?token=' + token;
   try {
@@ -530,12 +530,12 @@ function requestMagicLink(p) {
 function verifyMagicToken(p) {
   if (!p.token) return { error: 'Token inválido' };
   var tokens = getRows('AuthTokens');
-  var entry = tokens.find(function(t){ return t.token === p.token; });
+  var entry = tokens.find(function(t){ return t.id === p.token; });
   if (!entry) return { error: 'Link inválido o ya fue usado' };
   if (new Date(entry.expiresAt) < new Date()) return { error: 'El link expiró — solicita uno nuevo' };
 
-  // Eliminar token (uso único)
-  deleteRow('AuthTokens', entry.token);
+  // Eliminar token (uso único) — busca por columna 'id'
+  deleteRow('AuthTokens', entry.id);
 
   var email = entry.email;
   var users = getRows('Users');
