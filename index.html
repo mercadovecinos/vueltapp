@@ -180,7 +180,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
     <div style="text-align:center;margin-bottom:24px">
       <div style="font-size:2rem;margin-bottom:8px">👋</div>
       <div style="font-weight:800;font-size:1.1rem">¡Bienvenido/a!</div>
-      <div style="color:var(--muted);font-size:.85rem;margin-top:6px">Es tu primera vez — completa tu perfil</div>
+      <div id="parcela-subtitle" style="color:var(--muted);font-size:.85rem;margin-top:6px">Es tu primera vez — completa tu perfil</div>
     </div>
     <div class="fg" id="fg-name" style="display:none">
       <label>Tu nombre</label>
@@ -517,7 +517,7 @@ async function checkTokenInUrl() {
   document.getElementById('google-btn-wrap').style.display = 'none';
   var wrap = document.getElementById('parcela-wrap');
   wrap.style.display = 'block';
-  wrap.querySelector('.parcela-wrap > div').lastElementChild.textContent = 'Verificando link…';
+  document.getElementById('parcela-subtitle').textContent = 'Verificando link…';
   var res = await api('verifyMagicToken', { token: token });
   if (res.error) {
     wrap.style.display = 'none';
@@ -536,7 +536,7 @@ async function checkTokenInUrl() {
   if (res.needsProfile) {
     // Usuario nuevo — pedir nombre + parcela
     pendingMagicEmail = res.email;
-    wrap.querySelector('div[style*="primera vez"]').textContent = 'Completa tu perfil para entrar';
+    document.getElementById('parcela-subtitle').textContent = 'Completa tu perfil para entrar';
     document.getElementById('fg-name').style.display = 'block';
     var sel = document.getElementById('p-parcela');
     sel.innerHTML = '<option value="">Selecciona…</option>';

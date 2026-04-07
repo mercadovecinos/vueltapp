@@ -530,12 +530,12 @@ function requestMagicLink(p) {
 function verifyMagicToken(p) {
   if (!p.token) return { error: 'Token inválido' };
   var tokens = getRows('AuthTokens');
-  var entry = tokens.find(function(t){ return t.id === p.token; });
+  var entry = tokens.find(function(t){ return (t.id || t.token) === p.token; });
   if (!entry) return { error: 'Link inválido o ya fue usado' };
   if (new Date(entry.expiresAt) < new Date()) return { error: 'El link expiró — solicita uno nuevo' };
 
   // Eliminar token (uso único) — busca por columna 'id'
-  deleteRow('AuthTokens', entry.id);
+  deleteRow('AuthTokens', entry.id || entry.token);
 
   var email = entry.email;
   var users = getRows('Users');
