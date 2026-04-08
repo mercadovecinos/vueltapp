@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>vueltapp</title>
-<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛻</text></svg>">
 <style>
 :root {
@@ -165,7 +165,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 
   <!-- Google Sign-In -->
   <div class="g-btn-wrap" id="google-btn-wrap">
-    <div id="google-signin-btn"></div>
+    <button class="btn btn-o" id="google-signin-btn" onclick="signInWithGoogle()" style="display:flex;align-items:center;justify-content:center;gap:10px"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">Continuar con Google</button>
     <div id="auth-err" class="err"></div>
     <div class="auth-divider">o entra con tu email</div>
     <div class="fg" style="margin-bottom:8px">
@@ -330,10 +330,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 
 <script>
 // ══════════════════════════════════════════════
-// CONFIG
+// CONFIG — reemplazar con tus valores de Supabase
+// Project Settings → API → Project URL + anon key
 // ══════════════════════════════════════════════
-var GAS_URL = 'https://script.google.com/macros/s/AKfycbw6ZwE01qwfbt2LtQLFWLrFeniOkHRU-wPrU8z1n4cLrKC-rCfkkXf6YI-G6ITXS9sC/exec';
-var GOOGLE_CLIENT_ID = '475898847047-f3qee1tpouf67t2rf7emo98ujgaqtj3c.apps.googleusercontent.com';
+var SUPABASE_URL      = 'https://sooomvkknvmkhraxrhmv.supabase.co';
+var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNvb29tdmtrbnZta2hyYXhyaG12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NzA5NDUsImV4cCI6MjA5MTI0Njk0NX0.7YczR3CQNmKCeU39TPGflZabbPRd_KnuYsIbuoFOyJ0';
+var sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 var PUEBLOS = ['Puerto Varas Entrada Norte','Puerto Varas Entrada Sur','Puerto Varas Centro','Puerto Chico','Nueva Braunau','Llanquihue','Otro'];
 var DIAS_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
@@ -348,14 +350,16 @@ var pendingPayData = null;
 var balancesCache = [];
 var tripsCache = null;
 var pendingRepeatBase = null;
+var pendingRequestTripId = null;
+var pendingEmailToken = null;
 
-// ── In-memory caches (prefetch al entrar) ──
+// ── In-memory caches ──
 var myTripsData = null;
-var myReqsData = null;
+var myReqsData  = null;
 var balanceData = null;
 
-// ── Cache (stale-while-revalidate) ──
-var CACHE_TTL = 3 * 60 * 1000; // 3 min
+// ── LocalStorage cache (viajes por semana) ──
+var CACHE_TTL = 10 * 60 * 1000; // 10 min
 function cacheKey(s, e) { return 'vu_t_' + (currentUser ? currentUser.id.slice(0,8) : 'x') + '_' + s + '_' + e; }
 function getCached(k) {
   try { var x = JSON.parse(localStorage.getItem(k)); if (x && Date.now()-x.ts < CACHE_TTL) return x.d; } catch(e) {}
@@ -363,54 +367,221 @@ function getCached(k) {
 }
 function setCache(k, d) { try { localStorage.setItem(k, JSON.stringify({ts:Date.now(),d:d})); } catch(e) {} }
 
+// ── Mappers DB (snake_case) → app (camelCase) ──
+function mapTrip(t) {
+  var reqs = (t.requests || []).map(mapRequest);
+  var approved = reqs.filter(function(r){ return r.status === 'aprobado'; }).length;
+  return {
+    id: t.id, driverId: t.driver_id, driverName: t.driver_name, driverParcela: t.driver_parcela,
+    date: t.date, time: t.time, direction: t.direction, puebloPoint: t.pueblo_point,
+    totalSeats: t.total_seats, note: t.note || '',
+    availableSeats: t.total_seats - approved, requests: reqs
+  };
+}
+function mapRequest(r) {
+  return {
+    id: r.id, tripId: r.trip_id, driverId: r.driver_id, driverName: r.driver_name,
+    requesterId: r.requester_id, requesterName: r.requester_name, requesterParcela: r.requester_parcela,
+    status: r.status, token: r.token, driverComment: r.driver_comment || '', note: r.note || '',
+    trip: r.trips ? mapTrip(r.trips) : null
+  };
+}
+
 // ── Init ──
-(function init() {
-  // Restore session
-  try { currentUser = JSON.parse(localStorage.getItem('vu_user')); } catch(e) {}
-  if (currentUser) { enterApp(); return; }
-  // Verificar si viene con token de magic link en la URL
-  checkTokenInUrl();
-  // GSI se inicializa vía onGoogleLibraryLoad cuando carga el script
+(async function init() {
+  // Responder desde link de email (no requiere auth)
+  var params = new URLSearchParams(window.location.search);
+  var respondAction = params.get('respond');
+  var respondToken  = params.get('token');
+  if (respondAction && respondToken) {
+    history.replaceState(null, '', window.location.pathname);
+    await handleEmailRespond(respondAction, respondToken);
+    return;
+  }
+
+  // Sesión existente (también procesa magic link hash si viene en la URL)
+  var sessionRes = await sb.auth.getSession();
+  if (sessionRes.data.session) {
+    await loadUserProfile(sessionRes.data.session.user);
+    return;
+  }
+
+  // Escuchar nuevas sesiones (OAuth redirect, magic link)
+  sb.auth.onAuthStateChange(async function(event, session) {
+    if (event === 'SIGNED_IN' && session && !currentUser) {
+      await loadUserProfile(session.user);
+    }
+  });
+
+  document.getElementById('auth').style.display = 'flex';
 })();
 
-// Llamado automáticamente por el script de Google cuando termina de cargar
-function onGoogleLibraryLoad() {
-  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredentialResponse, auto_select: false });
-  google.accounts.id.renderButton(document.getElementById('google-signin-btn'),
-    { theme: 'outline', size: 'large', width: 280, locale: 'es', text: 'continue_with' });
+// ── Cargar perfil del usuario ──
+async function loadUserProfile(authUser) {
+  var res = await sb.from('users').select('*').eq('id', authUser.id).maybeSingle();
+  if (!res.data) {
+    showParcelaForm(authUser);
+    return;
+  }
+  currentUser = { id: authUser.id, name: res.data.name, email: authUser.email, parcela: res.data.parcela };
+  localStorage.setItem('vu_user', JSON.stringify(currentUser));
+  enterApp();
 }
 
-// ── API ──
-function api(action, params) {
-  return new Promise(function(resolve) {
-    var url = GAS_URL + '?action=' + action;
-    if (params) Object.keys(params).forEach(function(k) {
-      url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-    });
-    var done = false, timer;
-    function doJsonp() {
-      var cb = 'vu_' + Date.now();
-      window[cb] = function(d) {
-        if (done) return; done = true; clearTimeout(timer); delete window[cb]; resolve(d);
-      };
-      var s = document.createElement('script');
-      s.src = url + '&callback=' + cb;
-      s.onerror = function() { if (!done) { done = true; resolve({ error: 'Error de red' }); } };
-      document.head.appendChild(s);
-      timer = setTimeout(function() { if (!done) { done = true; resolve({ error: 'Timeout' }); } }, 10000);
-    }
-    var ft = setTimeout(function() { if (!done) doJsonp(); }, 5000);
-    fetch(url).then(function(r) { return r.json(); })
-      .then(function(d) { clearTimeout(ft); if (!done) { done = true; resolve(d); } })
-      .catch(function() { clearTimeout(ft); if (!done) doJsonp(); });
+function showParcelaForm(authUser) {
+  window._pendingAuthUser = authUser;
+  document.getElementById('auth').style.display = 'flex';
+  document.getElementById('google-btn-wrap').style.display = 'none';
+  var wrap = document.getElementById('parcela-wrap');
+  wrap.style.display = 'block';
+  document.getElementById('parcela-subtitle').textContent = 'Primera vez — completa tu perfil';
+  var hasGoogleName = authUser.user_metadata && authUser.user_metadata.full_name;
+  document.getElementById('fg-name').style.display = hasGoogleName ? 'none' : 'block';
+  var sel = document.getElementById('p-parcela');
+  sel.innerHTML = '<option value="">Selecciona…</option>';
+  for (var i = 1; i <= 50; i++) sel.innerHTML += '<option value="'+i+'">Parcela '+i+'</option>';
+  document.getElementById('main').classList.remove('on');
+}
+
+// ── Auth: Google ──
+async function signInWithGoogle() {
+  var btn = document.getElementById('google-signin-btn');
+  btn.disabled = true; btn.textContent = 'Redirigiendo…';
+  var res = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin + window.location.pathname }
   });
+  if (res.error) {
+    btn.disabled = false; btn.innerHTML = '<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">Continuar con Google';
+    var err = document.getElementById('auth-err');
+    err.textContent = res.error.message; err.classList.add('on');
+  }
 }
 
-function decodeJwt(token) {
-  try {
-    var b64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
-    return JSON.parse(atob(b64));
-  } catch(e) { return null; }
+// ── Auth: Magic Link ──
+async function sendMagicLink() {
+  var email = (document.getElementById('magic-email').value || '').trim();
+  var msg = document.getElementById('magic-msg');
+  msg.textContent = '';
+  if (!email || !email.includes('@')) {
+    msg.textContent = 'Ingresa un email válido'; msg.style.color = 'var(--danger)'; return;
+  }
+  var btn = document.getElementById('magic-btn');
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  var res = await sb.auth.signInWithOtp({
+    email: email,
+    options: { emailRedirectTo: window.location.origin + window.location.pathname }
+  });
+  btn.disabled = false; btn.textContent = 'Enviar link de acceso';
+  if (res.error) { msg.textContent = res.error.message; msg.style.color = 'var(--danger)'; return; }
+  msg.innerHTML = '✅ Link enviado a <strong>' + email + '</strong><br><small style="color:var(--muted)">Revisa tu bandeja (y spam). Válido 1 hora.</small>';
+  msg.style.color = 'var(--p)';
+}
+
+// ── Auth: Completar perfil (primera vez) ──
+async function completeParcela() {
+  var parcela = document.getElementById('p-parcela').value;
+  var err = document.getElementById('parcela-err');
+  err.classList.remove('on');
+  if (!parcela) { err.textContent = 'Selecciona tu parcela'; err.classList.add('on'); return; }
+
+  var authUser = window._pendingAuthUser;
+  if (!authUser) {
+    var userRes = await sb.auth.getUser();
+    authUser = userRes.data.user;
+  }
+  var hasGoogleName = authUser.user_metadata && authUser.user_metadata.full_name;
+  var name = hasGoogleName ? authUser.user_metadata.full_name : (document.getElementById('p-name').value || '').trim();
+  if (!name) { err.textContent = 'Ingresa tu nombre'; err.classList.add('on'); return; }
+
+  var insertRes = await sb.from('users').insert({ id: authUser.id, name: name, parcela: parcela });
+  if (insertRes.error) { err.textContent = 'Error: ' + insertRes.error.message; err.classList.add('on'); return; }
+
+  currentUser = { id: authUser.id, name: name, email: authUser.email, parcela: parcela };
+  localStorage.setItem('vu_user', JSON.stringify(currentUser));
+  window._pendingAuthUser = null;
+  enterApp();
+}
+
+// ── Logout ──
+async function logout() {
+  await sb.auth.signOut();
+  Object.keys(localStorage).filter(function(k){ return k.startsWith('vu_'); }).forEach(function(k){ localStorage.removeItem(k); });
+  currentUser = null;
+  myTripsData = null; myReqsData = null; balanceData = null; tripsCache = null;
+  pendingRejectId = null; pendingPayData = null; pendingRepeatBase = null; pendingRequestTripId = null;
+  document.getElementById('main').classList.remove('on');
+  document.getElementById('auth').style.display = 'flex';
+  document.getElementById('google-btn-wrap').style.display = 'block';
+  document.getElementById('parcela-wrap').style.display = 'none';
+  document.getElementById('magic-msg').textContent = '';
+  document.getElementById('auth-err').classList.remove('on');
+}
+
+// ── Responder desde link de email (sin auth) ──
+async function handleEmailRespond(action, token) {
+  var auth = document.getElementById('auth');
+  auth.style.display = 'flex';
+  auth.innerHTML = '<div style="text-align:center;padding:32px 24px;max-width:360px;width:100%">' +
+    '<div class="logo" style="margin-bottom:24px">vuelt<em>app</em></div>' +
+    '<div id="respond-content"><div class="loader">Verificando link…</div></div></div>';
+
+  var content = document.getElementById('respond-content');
+  var infoRes = await sb.rpc('get_request_for_email', { p_token: token });
+  var info = infoRes.data;
+
+  if (!info || info.error) {
+    content.innerHTML = '<div style="font-size:2rem;margin-bottom:12px">❌</div><div style="font-weight:700">' + (info && info.error ? info.error : 'Link inválido') + '</div><button class="btn btn-p" style="margin-top:20px" onclick="window.location.href=window.location.pathname">Abrir vueltapp</button>';
+    return;
+  }
+  if (info.status !== 'solicitado') {
+    var msg = info.status === 'aprobado' ? '✅ Ya aprobaste esta solicitud' : '❌ Esta solicitud ya fue respondida';
+    content.innerHTML = '<div style="font-size:1.5rem;margin-bottom:12px">' + msg + '</div><button class="btn btn-p" style="margin-top:16px" onclick="window.location.href=window.location.pathname">Abrir vueltapp</button>';
+    return;
+  }
+
+  var route = info.direction === 'salida' ? 'PBI → ' + info.pueblo_point : info.pueblo_point + ' → PBI';
+  var tripInfo = info.trip_date + ' · ' + info.trip_time + ' · ' + route;
+
+  if (action === 'reject') {
+    pendingEmailToken = token;
+    content.innerHTML = '<div style="font-weight:700;margin-bottom:4px">❌ Rechazar solicitud</div>' +
+      '<div style="font-size:.85rem;color:var(--muted);margin-bottom:16px">' + info.requester_name + ' · ' + tripInfo + '</div>' +
+      '<div class="fg"><label>Comentario opcional</label><textarea id="email-reject-comment" rows="3" placeholder="Ej: ya tengo el auto lleno…"></textarea></div>' +
+      '<div class="row-btns"><button class="btn btn-g btn-sm" onclick="window.location.href=window.location.pathname">Cancelar</button>' +
+      '<button class="btn btn-d btn-sm" onclick="submitEmailReject()">Confirmar rechazo</button></div>';
+    return;
+  }
+
+  // Aprobar
+  content.innerHTML = '<div class="loader">Aprobando…</div>';
+  var res = await sb.rpc('respond_to_request_by_token', { p_token: token, p_action: 'approve', p_comment: '' });
+  var result = res.data;
+  if (result && result.error) {
+    content.innerHTML = '<div>❌ ' + result.error + '</div><button class="btn btn-p" style="margin-top:16px" onclick="window.location.href=window.location.pathname">Abrir vueltapp</button>';
+  } else {
+    content.innerHTML = '<div class="success-anim"><div class="big">✅</div>' +
+      '<div style="font-weight:700;margin-top:8px">¡Solicitud aprobada!</div>' +
+      '<div style="font-size:.85rem;color:var(--muted);margin-top:4px">' + info.requester_name + ' fue notificado</div></div>' +
+      '<button class="btn btn-p" style="margin-top:20px" onclick="window.location.href=window.location.pathname">Abrir vueltapp</button>';
+  }
+}
+
+async function submitEmailReject() {
+  var token = pendingEmailToken;
+  var comment = (document.getElementById('email-reject-comment').value || '').trim();
+  var content = document.getElementById('respond-content');
+  content.innerHTML = '<div class="loader">Procesando…</div>';
+  var res = await sb.rpc('respond_to_request_by_token', { p_token: token, p_action: 'reject', p_comment: comment });
+  var result = res.data;
+  pendingEmailToken = null;
+  if (result && result.error) {
+    content.innerHTML = '<div>❌ ' + result.error + '</div>';
+  } else {
+    content.innerHTML = '<div style="font-weight:700;font-size:1rem">❌ Solicitud rechazada</div>' +
+      '<div style="font-size:.85rem;color:var(--muted);margin-top:4px">El pasajero fue notificado</div>';
+  }
+  content.innerHTML += '<button class="btn btn-p" style="margin-top:20px" onclick="window.location.href=window.location.pathname">Abrir vueltapp</button>';
 }
 
 // ── Helpers ──
@@ -474,139 +645,66 @@ async function prefetchAll() {
   var w0 = getWeekDates(0), w1 = getWeekDates(1);
   try {
     var results = await Promise.all([
-      api('getTrips', { start: w0.start, end: w0.end }),
-      api('getTrips', { start: w1.start, end: w1.end }),
-      api('getMyTrips', { userId: currentUser.id }),
-      api('getMyRequests', { userId: currentUser.id }),
-      api('getBalance', { userId: currentUser.id })
+      fetchTrips(w0.start, w0.end),
+      fetchTrips(w1.start, w1.end),
+      fetchMyTrips(),
+      fetchMyRequests(),
+      fetchBalance()
     ]);
-    if (!results[0].error) setCache(cacheKey(w0.start, w0.end), results[0]);
-    if (!results[1].error) { setCache(cacheKey(w1.start, w1.end), results[1]); tripsCache = results[1]; }
-    if (!results[2].error) { myTripsData = results[2]; updatePendingBadge(myTripsData); }
-    if (!results[3].error) myReqsData = results[3];
-    if (!results[4].error) balanceData = results[4].balances;
+    if (results[0]) setCache(cacheKey(w0.start, w0.end), results[0]);
+    if (results[1]) { setCache(cacheKey(w1.start, w1.end), results[1]); tripsCache = results[1]; }
+    if (results[2]) { myTripsData = results[2]; updatePendingBadge(myTripsData); }
+    if (results[3]) myReqsData = results[3];
+    if (results[4]) balanceData = results[4];
   } catch(e) {}
 }
 
-// ── Auth Magic Link ──
-var pendingMagicEmail = null;
+// ── Funciones de datos (Supabase) ──
 
-async function sendMagicLink() {
-  var email = (document.getElementById('magic-email').value || '').trim();
-  var msg = document.getElementById('magic-msg');
-  msg.textContent = '';
-  if (!email || !email.includes('@')) {
-    msg.textContent = 'Ingresa un email válido'; msg.style.color = 'var(--danger)'; return;
-  }
-  var btn = document.getElementById('magic-btn');
-  btn.disabled = true; btn.textContent = 'Enviando…';
-  var res = await api('requestMagicLink', { email: email });
-  btn.disabled = false; btn.textContent = 'Enviar link de acceso';
-  if (res.error) { msg.textContent = res.error; msg.style.color = 'var(--danger)'; return; }
-  msg.innerHTML = '✅ Link enviado a <strong>' + email + '</strong><br><small style="color:var(--muted)">Revisa tu bandeja (y spam). Válido 15 min.</small>';
-  msg.style.color = 'var(--p)';
+async function fetchTrips(start, end) {
+  var res = await sb.from('trips').select('*, requests(*)').gte('date', start).lte('date', end).order('date').order('time');
+  if (res.error) return null;
+  return res.data.map(mapTrip);
 }
 
-async function checkTokenInUrl() {
-  var params = new URLSearchParams(window.location.search);
-  var token = params.get('token');
-  if (!token) return false;
-  // Limpiar token de la URL sin recargar
-  history.replaceState(null, '', window.location.pathname);
-  document.getElementById('auth').style.display = 'flex';
-  document.getElementById('google-btn-wrap').style.display = 'none';
-  var wrap = document.getElementById('parcela-wrap');
-  wrap.style.display = 'block';
-  document.getElementById('parcela-subtitle').textContent = 'Verificando link…';
-  var res = await api('verifyMagicToken', { token: token });
-  if (res.error) {
-    wrap.style.display = 'none';
-    document.getElementById('google-btn-wrap').style.display = 'block';
-    var msg = document.getElementById('magic-msg');
-    msg.textContent = res.error; msg.style.color = 'var(--danger)';
-    return true;
-  }
-  if (res.ok && res.user) {
-    currentUser = res.user;
-    localStorage.setItem('vu_user', JSON.stringify(currentUser));
-    wrap.style.display = 'none';
-    enterApp();
-    return true;
-  }
-  if (res.needsProfile) {
-    // Usuario nuevo — pedir nombre + parcela
-    pendingMagicEmail = res.email;
-    document.getElementById('parcela-subtitle').textContent = 'Completa tu perfil para entrar';
-    document.getElementById('fg-name').style.display = 'block';
-    var sel = document.getElementById('p-parcela');
-    sel.innerHTML = '<option value="">Selecciona…</option>';
-    for (var i = 1; i <= 50; i++) sel.innerHTML += '<option value="'+i+'">Parcela '+i+'</option>';
-    return true;
-  }
-  return true;
+async function fetchMyTrips() {
+  var res = await sb.from('trips').select('*, requests(*)').eq('driver_id', currentUser.id).order('date', { ascending: false });
+  if (res.error) return null;
+  return res.data.map(mapTrip);
 }
 
-// ── Auth Google ──
-var pendingGoogle = null;
-
-async function handleCredentialResponse(response) {
-  var payload = decodeJwt(response.credential);
-  var err = document.getElementById('auth-err');
-  err.classList.remove('on');
-  if (!payload || !payload.sub || !payload.email) {
-    err.textContent = 'Error al verificar tu cuenta Google. Intenta de nuevo.';
-    err.classList.add('on'); return;
-  }
-  var res = await api('googleAuth', { googleId: payload.sub, email: payload.email, name: payload.name });
-  if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
-  if (res.needsParcela) {
-    // Primera vez — pedir parcela
-    pendingGoogle = { googleId: payload.sub, email: payload.email, name: payload.name };
-    document.getElementById('google-btn-wrap').style.display = 'none';
-    var sel = document.getElementById('p-parcela');
-    sel.innerHTML = '<option value="">Selecciona…</option>';
-    for (var i = 1; i <= 50; i++) { sel.innerHTML += '<option value="'+i+'">Parcela '+i+'</option>'; }
-    document.getElementById('parcela-wrap').style.display = 'block';
-    return;
-  }
-  currentUser = res.user;
-  localStorage.setItem('vu_user', JSON.stringify(currentUser));
-  enterApp();
+async function fetchMyRequests() {
+  var res = await sb.from('requests').select('*, trips(*)').eq('requester_id', currentUser.id).order('created_at', { ascending: false });
+  if (res.error) return null;
+  return res.data.map(mapRequest);
 }
 
-async function completeParcela() {
-  var parcela = document.getElementById('p-parcela').value;
-  var err = document.getElementById('parcela-err');
-  err.classList.remove('on');
-  if (!parcela) { err.textContent = 'Selecciona tu parcela'; err.classList.add('on'); return; }
-  var res;
-  if (pendingMagicEmail) {
-    var name = (document.getElementById('p-name').value || '').trim();
-    if (!name) { err.textContent = 'Ingresa tu nombre'; err.classList.add('on'); return; }
-    // Crear usuario nuevo via magic link (token ya fue verificado, usamos email guardado)
-    res = await api('createEmailUser', { email: pendingMagicEmail, name: name, parcela: parcela });
-  } else {
-    res = await api('googleAuth', { googleId: pendingGoogle.googleId, email: pendingGoogle.email, name: pendingGoogle.name, parcela: parcela });
-  }
-  if (res.error) { err.textContent = res.error; err.classList.add('on'); return; }
-  currentUser = res.user;
-  localStorage.setItem('vu_user', JSON.stringify(currentUser));
-  enterApp();
-}
+async function fetchBalance() {
+  var today = toDateStr(new Date());
+  var reqsRes = await sb.from('requests').select('*, trips(*)').eq('status', 'aprobado')
+    .or('driver_id.eq.' + currentUser.id + ',requester_id.eq.' + currentUser.id);
+  var paysRes = await sb.from('payments')
+    .or('from_user_id.eq.' + currentUser.id + ',to_user_id.eq.' + currentUser.id);
 
-function logout() {
-  // Limpiar cache para no dejar datos del usuario en el dispositivo
-  Object.keys(localStorage)
-    .filter(function(k){ return k.startsWith('vu_'); })
-    .forEach(function(k){ localStorage.removeItem(k); });
-  currentUser = null;
-  myTripsData = null; myReqsData = null; balanceData = null; tripsCache = null;
-  // Limpiar estado pendiente para no filtrar datos entre usuarios
-  pendingGoogle = null; pendingMagicEmail = null; pendingRejectId = null; pendingPayData = null; pendingRepeatBase = null; pendingRequestTripId = null;
-  document.getElementById('main').classList.remove('on');
-  document.getElementById('auth').style.display = '';
-  // Re-inicializar botón de Google
-  if (typeof google !== 'undefined' && google.accounts) onGoogleLibraryLoad();
+  var bal = {};
+  (reqsRes.data || []).forEach(function(r) {
+    var trip = r.trips;
+    if (!trip || trip.date > today) return;
+    var otherId, otherName, otherParcela, delta;
+    if (r.requester_id === currentUser.id) {
+      otherId = r.driver_id; otherName = r.driver_name; otherParcela = '?'; delta = -2000;
+    } else if (r.driver_id === currentUser.id) {
+      otherId = r.requester_id; otherName = r.requester_name; otherParcela = r.requester_parcela; delta = 2000;
+    } else return;
+    if (!bal[otherId]) bal[otherId] = { userId: otherId, name: otherName, parcela: otherParcela, amount: 0 };
+    bal[otherId].amount += delta;
+  });
+  (paysRes.data || []).forEach(function(pay) {
+    var otherId = pay.from_user_id === currentUser.id ? pay.to_user_id : pay.from_user_id;
+    if (!bal[otherId]) return;
+    bal[otherId].amount += pay.from_user_id === currentUser.id ? parseInt(pay.amount) : -parseInt(pay.amount);
+  });
+  return Object.values(bal).filter(function(b){ return b.amount !== 0; });
 }
 
 // ── Trips page ──
@@ -617,7 +715,6 @@ async function loadTrips() {
                fmtDate(week.start) + ' — ' + fmtDate(week.end);
   document.getElementById('week-label').textContent = label;
 
-  // Mostrar cache al instante si existe
   var ck = cacheKey(week.start, week.end);
   var cached = getCached(ck);
   if (cached) {
@@ -627,15 +724,14 @@ async function loadTrips() {
     document.getElementById('trips-list').innerHTML = '<div class="loader">Cargando…</div>';
   }
 
-  // Fetch en background siempre
-  var res = await api('getTrips', { start: week.start, end: week.end });
-  if (res.error) {
-    if (!cached) document.getElementById('trips-list').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div>' + res.error + '</div>';
+  var trips = await fetchTrips(week.start, week.end);
+  if (!trips) {
+    if (!cached) document.getElementById('trips-list').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div>Error al cargar. Intenta de nuevo.</div>';
     return;
   }
-  setCache(ck, res);
-  tripsCache = res;
-  renderTripsList(res, week.days, today);
+  setCache(ck, trips);
+  tripsCache = trips;
+  renderTripsList(trips, week.days, today);
 }
 
 function renderTripsList(trips, days, today) {
@@ -763,21 +859,23 @@ async function confirmRequest() {
   btn.disabled = true;
   closeModal('request');
   toast('Enviando solicitud…');
-  var res = await api('requestTrip', {
-    tripId: tripId,
-    requesterId: currentUser.id,
-    requesterEmail: currentUser.email,
-    requesterName: currentUser.name,
-    requesterParcela: currentUser.parcela,
+
+  var trip = tripsCache && tripsCache.find(function(t){ return t.id === tripId; });
+  if (!trip) { toast('Error: viaje no encontrado'); btn.disabled = false; return; }
+
+  // Verificar que no haya solicitado ya
+  var dupRes = await sb.from('requests').select('id').eq('trip_id', tripId).eq('requester_id', currentUser.id).neq('status', 'rechazado');
+  if (dupRes.data && dupRes.data.length > 0) { toast('Ya solicitaste este viaje'); btn.disabled = false; pendingRequestTripId = null; return; }
+
+  var insertRes = await sb.from('requests').insert({
+    trip_id: tripId, driver_id: trip.driverId, driver_name: trip.driverName,
+    requester_id: currentUser.id, requester_name: currentUser.name, requester_parcela: currentUser.parcela,
     note: note
   });
   pendingRequestTripId = null;
-  if (res.error) { toast('Error: ' + res.error); return; }
-  if (res.mailError) {
-    toast('✅ Solicitud enviada — avisa al conductor directo (falló el mail)', 4000);
-  } else {
-    toast('✅ Solicitud enviada — el conductor recibirá un mail y te responderá por aquí', 4000);
-  }
+  btn.disabled = false;
+  if (insertRes.error) { toast('Error: ' + insertRes.error.message); return; }
+  toast('✅ Solicitud enviada — el conductor recibirá un mail y te responderá por aquí', 4000);
   myReqsData = null;
   loadTrips();
 }
@@ -797,9 +895,9 @@ function getWeekMonday(offsetWeeks) {
 async function openRepeatLastWeek() {
   var trips = myTripsData;
   if (!trips) {
-    var res = await api('getMyTrips', { userId: currentUser.id });
-    if (res.error || !Array.isArray(res)) { toast('No se pudieron cargar tus viajes'); return; }
-    myTripsData = res; trips = res;
+    trips = await fetchMyTrips();
+    if (!trips) { toast('No se pudieron cargar tus viajes'); return; }
+    myTripsData = trips;
   }
   var lastMon = getWeekMonday(-1);
   var lastSun = new Date(lastMon); lastSun.setDate(lastMon.getDate() + 6);
@@ -859,9 +957,14 @@ async function confirmRepeatWeek() {
       puebloPoint: c.orig.puebloPoint, seats: c.orig.totalSeats, note: c.orig.note || ''
     };
   });
-  var res = await api('addTrips', { trips: JSON.stringify(trips) });
+  var tripsToInsert = trips.map(function(td) {
+    return { driver_id: td.driverId, driver_name: td.driverName, driver_parcela: td.driverParcela,
+      date: td.date, time: td.time, direction: td.direction, pueblo_point: td.puebloPoint,
+      total_seats: parseInt(td.seats), note: td.note || '' };
+  });
+  var res = await sb.from('trips').insert(tripsToInsert);
   closeModal('repeat');
-  if (res.error) { toast('Error: ' + res.error); return; }
+  if (res.error) { toast('Error: ' + res.error.message); return; }
   myTripsData = null;
   Object.keys(localStorage).filter(function(k){ return k.startsWith('vu_t_'); }).forEach(function(k){ localStorage.removeItem(k); });
   tripsCache = null;
@@ -944,16 +1047,15 @@ async function doPublish() {
   if (date < toDateStr(new Date())) { err.textContent = 'La fecha debe ser hoy o en el futuro'; err.classList.add('on'); return; }
 
   var note = (document.getElementById('pub-note').value || '').trim();
-  var payload = {
-    driverId: currentUser.id, driverName: currentUser.name, driverParcela: currentUser.parcela,
-    date: date, time: time, direction: publishState.dir, puebloPoint: pueblo, seats: publishState.seats,
-    note: note
-  };
   var pubBtn = document.querySelector('#publish-content .btn-p');
   if (pubBtn) { pubBtn.textContent = 'Publicando…'; pubBtn.disabled = true; }
-  var res = await api('addTrip', payload);
+  var res = await sb.from('trips').insert({
+    driver_id: currentUser.id, driver_name: currentUser.name, driver_parcela: currentUser.parcela,
+    date: date, time: time, direction: publishState.dir, pueblo_point: pueblo,
+    total_seats: publishState.seats, note: note
+  });
   if (res.error) {
-    err.textContent = res.error; err.classList.add('on');
+    err.textContent = res.error.message; err.classList.add('on');
     if (pubBtn) { pubBtn.textContent = 'Publicar viaje'; pubBtn.disabled = false; }
     return;
   }
@@ -1001,13 +1103,13 @@ async function doRepeatDays() {
   var selected = Array.from(document.querySelectorAll('.dchip.on:not(.disabled)'));
   if (selected.length === 0) { toast('Selecciona al menos un día nuevo'); return; }
   var trips = selected.map(function(chip) {
-    return { driverId: currentUser.id, driverName: currentUser.name, driverParcela: currentUser.parcela,
-      date: chip.dataset.date, time: base.time, direction: base.dir, puebloPoint: base.pueblo, seats: base.seats };
+    return { driver_id: currentUser.id, driver_name: currentUser.name, driver_parcela: currentUser.parcela,
+      date: chip.dataset.date, time: base.time, direction: base.dir, pueblo_point: base.pueblo, total_seats: base.seats, note: '' };
   });
   var btn = document.querySelector('.repeat-box .btn-p');
   if (btn) { btn.textContent = 'Publicando…'; btn.disabled = true; }
-  var res = await api('addTrips', { trips: JSON.stringify(trips) });
-  if (res.error) { toast('Error: ' + res.error); if (btn) { btn.textContent = 'Agregar días seleccionados'; btn.disabled = false; } return; }
+  var res = await sb.from('trips').insert(trips);
+  if (res.error) { toast('Error: ' + res.error.message); if (btn) { btn.textContent = 'Agregar días seleccionados'; btn.disabled = false; } return; }
   toast('✅ ' + trips.length + ' viaje' + (trips.length > 1 ? 's' : '') + ' publicado' + (trips.length > 1 ? 's' : ''));
   Object.keys(localStorage).filter(function(k){ return k.startsWith('vu_t_'); }).forEach(function(k){ localStorage.removeItem(k); });
   tripsCache = null;
@@ -1028,20 +1130,15 @@ function goToTripsAtDate(dateStr) {
 
 // ── My Trips page ──
 async function loadMyData() {
-  // Mostrar cache en memoria al instante si existe
   if (myTripsData !== null || myReqsData !== null) {
     renderMyData(myTripsData || [], myReqsData || []);
   } else {
     document.getElementById('my-content').innerHTML = '<div class="loader">Cargando…</div>';
   }
-  // Refrescar siempre en background
-  var [tripsRes, reqsRes] = await Promise.all([
-    api('getMyTrips', { userId: currentUser.id }),
-    api('getMyRequests', { userId: currentUser.id })
-  ]);
-  if (!tripsRes.error) myTripsData = tripsRes;
-  if (!reqsRes.error) myReqsData = reqsRes;
-  renderMyData(tripsRes.error ? (myTripsData||[]) : tripsRes, reqsRes.error ? (myReqsData||[]) : reqsRes);
+  var results = await Promise.all([fetchMyTrips(), fetchMyRequests()]);
+  if (results[0]) myTripsData = results[0];
+  if (results[1]) myReqsData = results[1];
+  renderMyData(myTripsData || [], myReqsData || []);
 }
 
 function updatePendingBadge(myTrips) {
@@ -1173,15 +1270,14 @@ function openReject(reqId) {
 }
 
 async function appRespond(reqId, approve, comment) {
-  var res = await api('respondRequest', { requestId: reqId, r: approve ? 'aprobado' : 'rechazado', comment: comment || '' });
-  if (res.error) { toast('Error: ' + res.error); return; }
-  var mailOk = !res.mailError;
-  if (approve) {
-    toast(mailOk ? '✅ Aprobado — el pasajero recibirá un mail' : '✅ Aprobado — avisa al pasajero directo (falló el mail)', 4000);
-  } else {
-    toast(mailOk ? '❌ Rechazado — el pasajero fue notificado' : '❌ Rechazado — avisa al pasajero directo (falló el mail)', 4000);
-  }
-  myTripsData = null; myReqsData = null; // invalidar cache para recargar
+  var res = await sb.from('requests').update({
+    status: approve ? 'aprobado' : 'rechazado',
+    driver_comment: comment || '',
+    updated_at: new Date().toISOString()
+  }).eq('id', reqId);
+  if (res.error) { toast('Error: ' + res.error.message); return; }
+  toast(approve ? '✅ Aprobado — el pasajero recibirá un mail' : '❌ Rechazado — el pasajero fue notificado', 4000);
+  myTripsData = null; myReqsData = null;
   loadMyData();
 }
 
@@ -1195,18 +1291,26 @@ function confirmReject() {
 async function doCancelTrip(tripId) {
   if (!confirm('¿Cancelar este viaje? Se notificará a todos los pasajeros.')) return;
   toast('Cancelando…');
-  var res = await api('cancelTrip', { tripId: tripId, callerId: currentUser.id });
-  if (res.error) { toast('Error: ' + res.error); return; }
+  // Cancelar solicitudes activas primero (trigger enviará emails)
+  await sb.from('requests')
+    .update({ status: 'cancelado', cancel_reason: 'by_driver', updated_at: new Date().toISOString() })
+    .eq('trip_id', tripId).in('status', ['solicitado', 'aprobado']);
+  var res = await sb.from('trips').delete().eq('id', tripId).eq('driver_id', currentUser.id);
+  if (res.error) { toast('Error: ' + res.error.message); return; }
   toast('✅ Viaje cancelado');
   myTripsData = null; myReqsData = null;
+  Object.keys(localStorage).filter(function(k){ return k.startsWith('vu_t_'); }).forEach(function(k){ localStorage.removeItem(k); });
+  tripsCache = null;
   loadMyData();
 }
 
 async function doCancelRequest(requestId) {
   if (!confirm('¿Cancelar tu solicitud?')) return;
   toast('Cancelando…');
-  var res = await api('cancelRequest', { requestId: requestId, callerId: currentUser.id });
-  if (res.error) { toast('Error: ' + res.error); return; }
+  var res = await sb.from('requests')
+    .update({ status: 'cancelado', cancel_reason: 'by_passenger', updated_at: new Date().toISOString() })
+    .eq('id', requestId).eq('requester_id', currentUser.id);
+  if (res.error) { toast('Error: ' + res.error.message); return; }
   toast('✅ Solicitud cancelada');
   myTripsData = null; myReqsData = null;
   loadMyData();
@@ -1214,19 +1318,17 @@ async function doCancelRequest(requestId) {
 
 // ── Balance page ──
 async function loadBalance() {
-  // Mostrar cache en memoria al instante si existe
   if (balanceData !== null) {
     renderBalance(balanceData);
   } else {
     document.getElementById('balance-content').innerHTML = '<div class="loader">Calculando…</div>';
   }
-  // Refrescar en background
-  var res = await api('getBalance', { userId: currentUser.id });
-  if (res.error) {
-    if (balanceData === null) document.getElementById('balance-content').innerHTML = '<div class="empty">⚠️ ' + res.error + '</div>';
+  var bal = await fetchBalance();
+  if (!bal) {
+    if (balanceData === null) document.getElementById('balance-content').innerHTML = '<div class="empty">⚠️ Error al cargar</div>';
     return;
   }
-  balanceData = res.balances || [];
+  balanceData = bal;
   renderBalance(balanceData);
 }
 
@@ -1267,16 +1369,17 @@ async function confirmPay() {
   var amount = parseInt(document.getElementById('pay-amount').value);
   if (!amount || amount <= 0) { toast('Ingresa un monto válido'); return; }
   var d = pendingPayData;
-  var res = await api('addPayment', {
-    fromUserId: d.iOwe ? currentUser.id : d.otherId,
-    toUserId:   d.iOwe ? d.otherId : currentUser.id,
-    callerId:   currentUser.id,
-    amount: amount
+  // Solo el acreedor (quien recibe) puede registrar el pago
+  if (d.iOwe) { toast('Solo quien recibe el pago puede marcarlo'); return; }
+  var res = await sb.from('payments').insert({
+    from_user_id: d.otherId,
+    to_user_id:   currentUser.id,
+    amount:       amount
   });
   closeModal('pay');
-  if (res.error) { toast('Error: ' + res.error); return; }
+  if (res.error) { toast('Error: ' + res.error.message); return; }
   toast('✅ Pago registrado');
-  balanceData = null; // invalidar para refrescar
+  balanceData = null;
   loadBalance();
 }
 
