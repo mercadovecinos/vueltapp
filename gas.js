@@ -563,6 +563,58 @@ function createEmailUser(p) {
   return { ok: true, user: { id: newUser.id, name: newUser.name, email: newUser.email, parcela: newUser.parcela } };
 }
 
+// ── Exportar datos como SQL para migrar a Supabase ──
+// Ejecutar desde el editor de GAS: Run → exportToSupabase
+// Ver resultado en: Ver → Registros de ejecución
+function exportToSupabase() {
+  function esc(v) { return String(v || '').replace(/'/g, "''"); }
+  var sql = '-- vueltapp migration SQL\n-- Pegar en Supabase SQL Editor DESPUÉS de correr migration_prep.sql\n\n';
+
+  // Users
+  sql += '-- USERS\n';
+  getRows('Users').forEach(function(u) {
+    sql += "INSERT INTO public.users (id, name, parcela, email) VALUES ('" +
+      esc(u.id) + "','" + esc(u.name) + "','" + esc(u.parcela) + "','" + esc((u.email||'').toLowerCase()) +
+      "') ON CONFLICT (id) DO NOTHING;\n";
+  });
+
+  // Trips
+  sql += '\n-- TRIPS\n';
+  getRows('Trips').forEach(function(t) {
+    sql += "INSERT INTO public.trips (id,driver_id,driver_name,driver_parcela,date,time,direction,pueblo_point,total_seats,note,created_at) VALUES ('" +
+      esc(t.id) + "','" + esc(t.driverId) + "','" + esc(t.driverName) + "','" + esc(t.driverParcela) + "','" +
+      esc(t.date) + "','" + esc(t.time) + "','" + esc(t.direction) + "','" + esc(t.puebloPoint) + "'," +
+      parseInt(t.totalSeats||1) + ",'" + esc(t.note) + "','" + esc(t.createdAt) +
+      "') ON CONFLICT (id) DO NOTHING;\n";
+  });
+
+  // Requests
+  sql += '\n-- REQUESTS\n';
+  getRows('Requests').forEach(function(r) {
+    sql += "INSERT INTO public.requests (id,trip_id,driver_id,driver_name,requester_id,requester_name,requester_parcela,status,token,driver_comment,note,created_at,updated_at) VALUES ('" +
+      esc(r.id) + "','" + esc(r.tripId) + "','" + esc(r.driverId) + "','" + esc(r.driverName) + "','" +
+      esc(r.requesterId) + "','" + esc(r.requesterName) + "','" + esc(r.requesterParcela) + "','" +
+      esc(r.status) + "','" + esc(r.token||r.id) + "','" + esc(r.driverComment) + "','" + esc(r.note) + "','" +
+      esc(r.createdAt) + "','" + esc(r.updatedAt||r.createdAt) +
+      "') ON CONFLICT (id) DO NOTHING;\n";
+  });
+
+  // Payments
+  sql += '\n-- PAYMENTS\n';
+  getRows('Payments').forEach(function(p) {
+    sql += "INSERT INTO public.payments (id,from_user_id,to_user_id,amount,created_at) VALUES ('" +
+      esc(p.id) + "','" + esc(p.fromUserId) + "','" + esc(p.toUserId) + "'," +
+      parseInt(p.amount||0) + ",'" + esc(p.createdAt) +
+      "') ON CONFLICT (id) DO NOTHING;\n";
+  });
+
+  // Escribir a Google Doc (el log de GAS trunca textos largos)
+  var doc = DocumentApp.create('vueltapp_migration_' + new Date().toISOString().slice(0,10));
+  doc.getBody().setText(sql);
+  Logger.log('✅ SQL escrito en Google Doc: ' + doc.getUrl());
+  Logger.log('Abre el link, selecciona todo (Cmd+A), copia y pega en Supabase SQL Editor.');
+}
+
 function pingAction(p) {
   var v = { version: 3, ts: new Date().toISOString() };
   if (!p.to) return v;

@@ -418,14 +418,29 @@ function mapRequest(r) {
 
 // ── Cargar perfil del usuario ──
 async function loadUserProfile(authUser) {
+  // Buscar por ID (usuario ya migrado o nuevo)
   var res = await sb.from('users').select('*').eq('id', authUser.id).maybeSingle();
-  if (!res.data) {
-    showParcelaForm(authUser);
+  if (res.data) {
+    currentUser = { id: authUser.id, name: res.data.name, email: authUser.email, parcela: res.data.parcela };
+    localStorage.setItem('vu_user', JSON.stringify(currentUser));
+    enterApp();
     return;
   }
-  currentUser = { id: authUser.id, name: res.data.name, email: authUser.email, parcela: res.data.parcela };
-  localStorage.setItem('vu_user', JSON.stringify(currentUser));
-  enterApp();
+
+  // No encontrado por ID — buscar por email (migración desde GAS)
+  var emailRes = await sb.from('users').select('*').eq('email', authUser.email.toLowerCase()).maybeSingle();
+  if (emailRes.data) {
+    // Usuario existente con ID viejo de GAS — actualizar ID al nuevo UUID de Supabase
+    // ON UPDATE CASCADE actualiza automáticamente trips/requests/payments
+    await sb.from('users').update({ id: authUser.id }).eq('email', authUser.email.toLowerCase());
+    currentUser = { id: authUser.id, name: emailRes.data.name, email: authUser.email, parcela: emailRes.data.parcela };
+    localStorage.setItem('vu_user', JSON.stringify(currentUser));
+    enterApp();
+    return;
+  }
+
+  // Usuario genuinamente nuevo
+  showParcelaForm(authUser);
 }
 
 function showParcelaForm(authUser) {
