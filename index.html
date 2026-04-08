@@ -199,7 +199,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
 <div id="main">
   <div class="topbar">
     <div class="topbar-logo">vuelt<em>app</em></div>
-    <div class="topbar-user" id="topbar-user"></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="topbar-user" id="topbar-user"></div>
+      <button onclick="openModal('info')" style="width:26px;height:26px;border-radius:50%;border:1.5px solid rgba(255,255,255,.5);background:transparent;color:#fff;font-size:.8rem;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">i</button>
+    </div>
   </div>
 
   <!-- Viajes -->
@@ -228,7 +231,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
   <div class="page" id="page-balance">
     <div class="page-title">Balance</div>
     <div class="card" style="margin-bottom:16px;background:#f0f8f2;border:none">
-      <div style="font-size:.8rem;color:var(--muted)">Cada viaje como pasajero cuesta <strong>$2.000</strong>. El balance se actualiza automáticamente cuando el viaje ya pasó.</div>
+      <div style="font-size:.8rem;color:var(--muted)">Cada viaje como pasajero cuesta <strong>$2.000</strong>. El balance se actualiza automáticamente cuando el viaje ya pasó. Una vez pagado, solo la persona a quien se le debe puede marcar la deuda como pagada.</div>
     </div>
     <div id="balance-content"><div class="loader">Calculando…</div></div>
   </div>
@@ -326,6 +329,33 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
   </div>
 </div>
 
+<!-- ── Info Modal ── -->
+<div class="overlay" id="modal-info" onclick="if(event.target===this)closeModal('info')">
+  <div class="modal">
+    <div class="mhandle"></div>
+    <div class="mtitle">¿Cómo funciona vueltapp?</div>
+    <div style="font-size:.88rem;line-height:1.6;color:var(--txt)">
+      <p style="color:var(--muted);margin-bottom:16px">Una app para compartir viajes entre vecinos del parcelamiento hacia el pueblo y de vuelta.</p>
+
+      <div style="font-weight:800;font-size:.75rem;text-transform:uppercase;letter-spacing:.8px;color:var(--p);margin-bottom:8px">🗓 Viajes</div>
+      <p style="margin-bottom:14px">Mira los viajes publicados por tus vecinos. Puedes navegar entre semanas con las flechas. Si ves un viaje que te sirve, tócalo para ver el detalle y solicitar un cupo.</p>
+
+      <div style="font-weight:800;font-size:.75rem;text-transform:uppercase;letter-spacing:.8px;color:var(--p);margin-bottom:8px">➕ Publicar</div>
+      <p style="margin-bottom:14px">¿Vas al pueblo? Publica tu viaje con fecha, hora, dirección y cuántos cupos tienes disponibles. Tus vecinos podrán ver tu viaje y pedirte un cupo. Recibirás un mail con cada solicitud.</p>
+
+      <div style="font-weight:800;font-size:.75rem;text-transform:uppercase;letter-spacing:.8px;color:var(--p);margin-bottom:8px">🚗 Mis viajes</div>
+      <p style="margin-bottom:14px">Aquí ves los viajes que publicaste (como conductor) y los viajes que solicitaste (como pasajero). Puedes aprobar o rechazar solicitudes, y cancelar viajes o solicitudes activas.</p>
+
+      <div style="font-weight:800;font-size:.75rem;text-transform:uppercase;letter-spacing:.8px;color:var(--p);margin-bottom:8px">💰 Balance</div>
+      <p style="margin-bottom:14px">Cada viaje como pasajero cuesta <strong>$2.000</strong>. El balance muestra cuánto debes o te deben tus vecinos, calculado automáticamente con los viajes pasados. Solo la persona a quien se le debe puede marcar una deuda como pagada.</p>
+
+      <div style="font-weight:800;font-size:.75rem;text-transform:uppercase;letter-spacing:.8px;color:var(--p);margin-bottom:8px">👤 Perfil</div>
+      <p style="margin-bottom:4px">Tu nombre, parcela y opción de cerrar sesión.</p>
+    </div>
+    <button class="btn btn-p" style="margin-top:20px" onclick="closeModal('info')">Entendido</button>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -343,7 +373,7 @@ var MESES_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov
 
 // ── State ──
 var currentUser = null;
-var weekOffset = 1;
+var weekOffset = 0;
 var publishState = {};
 var pendingRejectId = null;
 var pendingPayData = null;
@@ -418,28 +448,44 @@ function mapRequest(r) {
 
 // ── Cargar perfil del usuario ──
 async function loadUserProfile(authUser) {
-  // Buscar por ID (usuario ya migrado o nuevo)
+  var email = (authUser.email || '').toLowerCase();
+
+  // 1. Buscar por ID exacto
   var res = await sb.from('users').select('*').eq('id', authUser.id).maybeSingle();
   if (res.data) {
+    // Actualizar email si no estaba guardado (usuarios anteriores)
+    if (!res.data.email) await sb.from('users').update({ email: email }).eq('id', authUser.id);
     currentUser = { id: authUser.id, name: res.data.name, email: authUser.email, parcela: res.data.parcela };
     localStorage.setItem('vu_user', JSON.stringify(currentUser));
     enterApp();
     return;
   }
 
-  // No encontrado por ID — buscar por email (migración desde GAS)
-  var emailRes = await sb.from('users').select('*').eq('email', authUser.email.toLowerCase()).maybeSingle();
-  if (emailRes.data) {
-    // Usuario existente con ID viejo de GAS — actualizar ID al nuevo UUID de Supabase
-    // ON UPDATE CASCADE actualiza automáticamente trips/requests/payments
-    await sb.from('users').update({ id: authUser.id }).eq('email', authUser.email.toLowerCase());
-    currentUser = { id: authUser.id, name: emailRes.data.name, email: authUser.email, parcela: emailRes.data.parcela };
-    localStorage.setItem('vu_user', JSON.stringify(currentUser));
-    enterApp();
-    return;
+  // 2. Buscar por email — unifica cuentas del mismo email entre providers (Google ↔ magic link)
+  if (email) {
+    var emailRes = await sb.from('users').select('*').eq('email', email).maybeSingle();
+    if (emailRes.data) {
+      var oldId = emailRes.data.id;
+      // Actualizar ID al nuevo UUID de Supabase (ON UPDATE CASCADE propaga a trips/requests/payments)
+      var upd = await sb.from('users').update({ id: authUser.id }).eq('id', oldId);
+      if (!upd.error) {
+        currentUser = { id: authUser.id, name: emailRes.data.name, email: authUser.email, parcela: emailRes.data.parcela };
+        localStorage.setItem('vu_user', JSON.stringify(currentUser));
+        enterApp();
+        return;
+      }
+      // Si el update falló (UUID ya existe), el usuario ya está registrado — buscar de nuevo
+      var retry = await sb.from('users').select('*').eq('id', authUser.id).maybeSingle();
+      if (retry.data) {
+        currentUser = { id: authUser.id, name: retry.data.name, email: authUser.email, parcela: retry.data.parcela };
+        localStorage.setItem('vu_user', JSON.stringify(currentUser));
+        enterApp();
+        return;
+      }
+    }
   }
 
-  // Usuario genuinamente nuevo
+  // 3. Usuario genuinamente nuevo
   showParcelaForm(authUser);
 }
 
