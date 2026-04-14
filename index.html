@@ -741,31 +741,39 @@ async function fetchMyRequests() {
 }
 
 async function fetchBalance() {
-  var today = toDateStr(new Date());
-  var reqsRes = await sb.from('requests').select('*, trips(*)').eq('status', 'aprobado')
-    .or('driver_id.eq.' + currentUser.id + ',requester_id.eq.' + currentUser.id);
-  var paysRes = await sb.from('payments')
-    .or('from_user_id.eq.' + currentUser.id + ',to_user_id.eq.' + currentUser.id);
+  try {
+    var today = toDateStr(new Date());
+    var reqsRes = await sb.from('requests').select('*, trips!trip_id(*)').eq('status', 'aprobado')
+      .or('driver_id.eq.' + currentUser.id + ',requester_id.eq.' + currentUser.id);
+    var paysRes = await sb.from('payments').select('*')
+      .or('from_user_id.eq.' + currentUser.id + ',to_user_id.eq.' + currentUser.id);
 
-  var bal = {};
-  (reqsRes.data || []).forEach(function(r) {
-    var trip = r.trips;
-    if (!trip || trip.date > today) return;
-    var otherId, otherName, otherParcela, delta;
-    if (r.requester_id === currentUser.id) {
-      otherId = r.driver_id; otherName = r.driver_name; otherParcela = '?'; delta = -2000;
-    } else if (r.driver_id === currentUser.id) {
-      otherId = r.requester_id; otherName = r.requester_name; otherParcela = r.requester_parcela; delta = 2000;
-    } else return;
-    if (!bal[otherId]) bal[otherId] = { userId: otherId, name: otherName, parcela: otherParcela, amount: 0 };
-    bal[otherId].amount += delta;
-  });
-  (paysRes.data || []).forEach(function(pay) {
-    var otherId = pay.from_user_id === currentUser.id ? pay.to_user_id : pay.from_user_id;
-    if (!bal[otherId]) return;
-    bal[otherId].amount += pay.from_user_id === currentUser.id ? parseInt(pay.amount) : -parseInt(pay.amount);
-  });
-  return Object.values(bal).filter(function(b){ return b.amount !== 0; });
+    if (reqsRes.error) throw reqsRes.error;
+    if (paysRes.error) throw paysRes.error;
+
+    var bal = {};
+    (reqsRes.data || []).forEach(function(r) {
+      var trip = r.trips;
+      if (!trip || trip.date > today) return;
+      var otherId, otherName, otherParcela, delta;
+      if (r.requester_id === currentUser.id) {
+        otherId = r.driver_id; otherName = r.driver_name; otherParcela = '?'; delta = -2000;
+      } else if (r.driver_id === currentUser.id) {
+        otherId = r.requester_id; otherName = r.requester_name; otherParcela = r.requester_parcela; delta = 2000;
+      } else return;
+      if (!bal[otherId]) bal[otherId] = { userId: otherId, name: otherName, parcela: otherParcela, amount: 0 };
+      bal[otherId].amount += delta;
+    });
+    (paysRes.data || []).forEach(function(pay) {
+      var otherId = pay.from_user_id === currentUser.id ? pay.to_user_id : pay.from_user_id;
+      if (!bal[otherId]) return;
+      bal[otherId].amount += pay.from_user_id === currentUser.id ? parseInt(pay.amount) : -parseInt(pay.amount);
+    });
+    return Object.values(bal).filter(function(b){ return b.amount !== 0; });
+  } catch(e) {
+    console.error('fetchBalance error:', e);
+    return null;
+  }
 }
 
 // ── Trips page ──
@@ -897,8 +905,6 @@ function openTrip(tripId) {
   document.getElementById('modal-trip-content').innerHTML = html;
   openModal('trip');
 }
-
-var pendingRequestTripId = null;
 
 function doRequest(tripId) {
   var trip = tripsCache && tripsCache.find(function(t) { return t.id === tripId; });
@@ -1353,9 +1359,10 @@ async function doCancelTrip(tripId) {
   if (!confirm('¿Cancelar este viaje? Se notificará a todos los pasajeros.')) return;
   toast('Cancelando…');
   // Cancelar solicitudes activas primero (trigger enviará emails)
-  await sb.from('requests')
+  var reqRes = await sb.from('requests')
     .update({ status: 'cancelado', cancel_reason: 'by_driver', updated_at: new Date().toISOString() })
     .eq('trip_id', tripId).in('status', ['solicitado', 'aprobado']);
+  if (reqRes.error) { toast('Error: ' + reqRes.error.message); return; }
   var res = await sb.from('trips').delete().eq('id', tripId).eq('driver_id', currentUser.id);
   if (res.error) { toast('Error: ' + res.error.message); return; }
   toast('✅ Viaje cancelado');

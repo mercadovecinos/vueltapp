@@ -4,7 +4,7 @@
 
 **vueltapp** es una app de carpooling para la comunidad de parcelas de Puerto Varas (PBI = Parcelamiento). Los vecinos comparten viajes al pueblo y registran quién debe a quién. JT es el único operador.
 
-Deploy en: `https://mercadovecinos.github.io/vueltapp/`
+Deploy en: `https://vueltapp.pages.dev` (Cloudflare Pages)
 Repo local: `/Users/jtpetour/Desktop/vueltapp`
 
 ---
@@ -21,7 +21,7 @@ Repo local: `/Users/jtpetour/Desktop/vueltapp`
 
 ## URLs clave
 
-- **App:** `https://mercadovecinos.github.io/vueltapp/`
+- **App:** `https://vueltapp.pages.dev`
 - **Supabase proyecto:** `https://sooomvkknvmkhraxrhmv.supabase.co`
 - **Supabase anon key:** en `index.html` variable `SUPABASE_ANON_KEY`
 - **Google Client ID:** `475898847047-f3qee1tpouf67t2rf7emo98ujgaqtj3c.apps.googleusercontent.com`
@@ -78,7 +78,7 @@ Repo local: `/Users/jtpetour/Desktop/vueltapp`
 ```js
 // Trip
 { id, driverId, driverName, driverParcela, date, time,
-  direction: 'salida'|'vuelta', puebloPoint, totalSeats, note, createdAt }
+  direction: 'salida'|'regreso', puebloPoint, totalSeats, note, createdAt }
 
 // Request
 { id, tripId, driverId, driverEmail, driverName,

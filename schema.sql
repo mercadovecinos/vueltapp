@@ -32,6 +32,7 @@ create table if not exists public.users (
   id         uuid references auth.users on delete cascade primary key,
   name       text not null,
   parcela    text not null,
+  email      text,
   created_at timestamptz default now()
 );
 
@@ -42,7 +43,7 @@ create table if not exists public.trips (
   driver_parcela text not null,
   date           date not null,
   time           text not null,
-  direction      text not null,      -- 'salida' | 'vuelta'
+  direction      text not null,      -- 'salida' | 'regreso'
   pueblo_point   text not null,
   total_seats    int  not null,
   note           text default '',
@@ -210,7 +211,7 @@ begin
       'to',      array[v_driver_email],
       'subject', '🛻 Solicitud de viaje — ' || new.requester_name,
       'text',    v_body
-    )::text
+    )
   );
   return new;
 exception when others then return new;
@@ -286,7 +287,7 @@ begin
       'to',      array[v_to_email],
       'subject', v_subject,
       'text',    v_body
-    )::text
+    )
   );
   return new;
 exception when others then return new;
