@@ -808,9 +808,10 @@ function renderTripsList(trips, days, today) {
   var html = '';
   days.forEach(function(day) {
     var ds = toDateStr(day);
-    var dayTrips = trips.filter(function(t) { return t.date === ds; });
     var isToday = ds === today;
     var isPast = ds < today;
+    if (isPast) return; // no mostrar días pasados
+    var dayTrips = trips.filter(function(t) { return t.date === ds; });
     html += '<div class="day-sec">';
     html += '<div class="day-lbl' + (isToday ? ' today' : '') + '">' + DIAS_ES[day.getDay()] + ' ' + day.getDate() + ' ' + MESES_ES[day.getMonth()] + (isToday ? ' — hoy' : '') + '</div>';
     if (dayTrips.length === 0) {
@@ -831,8 +832,7 @@ function renderTripsList(trips, days, today) {
           html += '<div class="seat' + (i < seatsApproved ? ' taken' : '') + '"></div>';
         }
         var badgeTxt = '', badgeCls = '';
-        if (isPast) { badgeTxt = 'Pasado'; badgeCls = 'b-past'; }
-        else if (myReq) { badgeTxt = myReq.status; badgeCls = 'b-' + myReq.status.substr(0,4); }
+        if (myReq) { badgeTxt = myReq.status; badgeCls = 'b-' + myReq.status.substr(0,4); }
         else if (full) { badgeTxt = 'Lleno'; badgeCls = 'b-rech'; }
         else { badgeTxt = t.availableSeats + ' cupo' + (t.availableSeats > 1 ? 's' : ''); badgeCls = 'b-disp'; }
         if (badgeTxt) html += '<span class="tc-badge ' + badgeCls + '">' + badgeTxt + '</span>';
