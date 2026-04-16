@@ -712,8 +712,8 @@ async function prefetchAll() {
       fetchMyRequests(),
       fetchBalance()
     ]);
-    if (results[0]) setCache(cacheKey(w0.start, w0.end), results[0]);
-    if (results[1]) { setCache(cacheKey(w1.start, w1.end), results[1]); tripsCache = results[1]; }
+    if (results[0]) { setCache(cacheKey(w0.start, w0.end), results[0]); if (weekOffset === 0) tripsCache = results[0]; }
+    if (results[1]) { setCache(cacheKey(w1.start, w1.end), results[1]); if (weekOffset === 1) tripsCache = results[1]; }
     if (results[2]) { myTripsData = results[2]; updatePendingBadge(myTripsData); }
     if (results[3]) myReqsData = results[3];
     if (results[4]) balanceData = results[4];
