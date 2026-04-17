@@ -446,6 +446,13 @@ function mapRequest(r) {
   document.getElementById('auth').style.display = 'flex';
 })();
 
+// ── Helpers de auth ──
+function enterUserAndApp(id, name, email, parcela) {
+  currentUser = { id: id, name: name, email: email, parcela: parcela };
+  localStorage.setItem('vu_user', JSON.stringify(currentUser));
+  enterApp();
+}
+
 // ── Cargar perfil del usuario ──
 async function loadUserProfile(authUser) {
   var email = (authUser.email || '').toLowerCase();
@@ -453,33 +460,26 @@ async function loadUserProfile(authUser) {
   // 1. Buscar por ID exacto
   var res = await sb.from('users').select('*').eq('id', authUser.id).maybeSingle();
   if (res.data) {
-    // Actualizar email si no estaba guardado (usuarios anteriores)
+    // Persistir email si faltaba (usuarios migrados desde GAS)
     if (!res.data.email) await sb.from('users').update({ email: email }).eq('id', authUser.id);
-    currentUser = { id: authUser.id, name: res.data.name, email: authUser.email, parcela: res.data.parcela };
-    localStorage.setItem('vu_user', JSON.stringify(currentUser));
-    enterApp();
+    enterUserAndApp(authUser.id, res.data.name, authUser.email, res.data.parcela);
     return;
   }
 
-  // 2. Buscar por email — unifica cuentas del mismo email entre providers (Google ↔ magic link)
+  // 2. Buscar por email — unifica cuentas entre providers (Google ↔ magic link)
   if (email) {
     var emailRes = await sb.from('users').select('*').eq('email', email).maybeSingle();
     if (emailRes.data) {
-      var oldId = emailRes.data.id;
-      // Actualizar ID al nuevo UUID de Supabase (ON UPDATE CASCADE propaga a trips/requests/payments)
-      var upd = await sb.from('users').update({ id: authUser.id }).eq('id', oldId);
+      // ON UPDATE CASCADE propaga el nuevo UUID a trips/requests/payments
+      var upd = await sb.from('users').update({ id: authUser.id }).eq('id', emailRes.data.id);
       if (!upd.error) {
-        currentUser = { id: authUser.id, name: emailRes.data.name, email: authUser.email, parcela: emailRes.data.parcela };
-        localStorage.setItem('vu_user', JSON.stringify(currentUser));
-        enterApp();
+        enterUserAndApp(authUser.id, emailRes.data.name, authUser.email, emailRes.data.parcela);
         return;
       }
-      // Si el update falló (UUID ya existe), el usuario ya está registrado — buscar de nuevo
+      // Si el update falló (UUID ya existe), buscar de nuevo
       var retry = await sb.from('users').select('*').eq('id', authUser.id).maybeSingle();
       if (retry.data) {
-        currentUser = { id: authUser.id, name: retry.data.name, email: authUser.email, parcela: retry.data.parcela };
-        localStorage.setItem('vu_user', JSON.stringify(currentUser));
-        enterApp();
+        enterUserAndApp(authUser.id, retry.data.name, authUser.email, retry.data.parcela);
         return;
       }
     }
@@ -558,10 +558,8 @@ async function completeParcela() {
   var insertRes = await sb.from('users').insert({ id: authUser.id, name: name, parcela: parcela });
   if (insertRes.error) { err.textContent = 'Error: ' + insertRes.error.message; err.classList.add('on'); return; }
 
-  currentUser = { id: authUser.id, name: name, email: authUser.email, parcela: parcela };
-  localStorage.setItem('vu_user', JSON.stringify(currentUser));
   window._pendingAuthUser = null;
-  enterApp();
+  enterUserAndApp(authUser.id, name, authUser.email, parcela);
 }
 
 // ── Logout ──
@@ -743,10 +741,12 @@ async function fetchMyRequests() {
 async function fetchBalance() {
   try {
     var today = toDateStr(new Date());
-    var reqsRes = await sb.from('requests').select('*, trips!trip_id(*)').eq('status', 'aprobado')
-      .or('driver_id.eq.' + currentUser.id + ',requester_id.eq.' + currentUser.id);
-    var paysRes = await sb.from('payments').select('*')
-      .or('from_user_id.eq.' + currentUser.id + ',to_user_id.eq.' + currentUser.id);
+    var [reqsRes, paysRes] = await Promise.all([
+      sb.from('requests').select('*, trips!trip_id(*)').eq('status', 'aprobado')
+        .or('driver_id.eq.' + currentUser.id + ',requester_id.eq.' + currentUser.id),
+      sb.from('payments').select('*')
+        .or('from_user_id.eq.' + currentUser.id + ',to_user_id.eq.' + currentUser.id)
+    ]);
 
     if (reqsRes.error) throw reqsRes.error;
     if (paysRes.error) throw paysRes.error;
