@@ -397,6 +397,9 @@ function getCached(k) {
 }
 function setCache(k, d) { try { localStorage.setItem(k, JSON.stringify({ts:Date.now(),d:d})); } catch(e) {} }
 
+// ── Escape HTML (XSS prevention) ──
+function escH(str) { var d = document.createElement('div'); d.textContent = str == null ? '' : String(str); return d.innerHTML; }
+
 // ── Mappers DB (snake_case) → app (camelCase) ──
 function mapTrip(t) {
   var reqs = (t.requests || []).map(mapRequest);
@@ -822,10 +825,10 @@ function renderTripsList(trips, days, today) {
         var full = t.availableSeats <= 0;
         var myReq = t.requests && t.requests.find(function(r) { return r.requesterId === currentUser.id; });
         html += '<div class="tcard' + (isMine ? ' mine' : '') + (full && !isMine ? ' full' : '') + '" onclick="openTrip(\'' + t.id + '\')">';
-        html += '<div class="tc-time">' + t.time + '</div>';
-        var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
+        html += '<div class="tc-time">' + escH(t.time) + '</div>';
+        var route = t.direction === 'salida' ? 'PBI → ' + escH(t.puebloPoint) : escH(t.puebloPoint) + ' → PBI';
         html += '<div class="tc-route">' + route + '</div>';
-        html += '<div class="tc-driver">' + (isMine ? 'Tu viaje' : t.driverName + ' · P.' + t.driverParcela) + '</div>';
+        html += '<div class="tc-driver">' + (isMine ? 'Tu viaje' : escH(t.driverName) + ' · P.' + escH(t.driverParcela)) + '</div>';
         html += '<div class="tc-seats">';
         for (var i = 0; i < parseInt(t.totalSeats); i++) {
           var seatsApproved = t.requests ? t.requests.filter(function(r){return r.status==='aprobado';}).length : 0;
@@ -853,15 +856,15 @@ function openTrip(tripId) {
   var now = new Date();
   var tripDateTime = new Date(trip.date + 'T' + (trip.time || '23:59') + ':00');
   var isPast = tripDateTime < now;
-  var route = trip.direction === 'salida' ? 'PBI → ' + trip.puebloPoint : trip.puebloPoint + ' → PBI';
+  var route = trip.direction === 'salida' ? 'PBI → ' + escH(trip.puebloPoint) : escH(trip.puebloPoint) + ' → PBI';
 
   var approvedPassengers = trip.requests ? trip.requests.filter(function(r){ return r.status === 'aprobado'; }) : [];
   var canSeePassengers = isMine || (myReq && myReq.status === 'aprobado');
 
   var html = '<div class="mtitle">' + fmtDate(trip.date) + ' · ' + trip.time + '</div>';
   html += '<div style="font-size:1rem;margin-bottom:4px">' + route + '</div>';
-  html += '<div style="font-size:.85rem;color:var(--muted);margin-bottom:' + (trip.note ? '8px' : '16px') + '">' + (isMine ? 'Tu viaje' : 'Conductor: ' + trip.driverName + ' (P.' + trip.driverParcela + ')') + '</div>';
-  if (trip.note) html += '<div style="font-size:.85rem;background:var(--bg);border-radius:8px;padding:8px 12px;margin-bottom:16px;color:var(--txt)">📝 ' + trip.note + '</div>';
+  html += '<div style="font-size:.85rem;color:var(--muted);margin-bottom:' + (trip.note ? '8px' : '16px') + '">' + (isMine ? 'Tu viaje' : 'Conductor: ' + escH(trip.driverName) + ' (P.' + escH(trip.driverParcela) + ')') + '</div>';
+  if (trip.note) html += '<div style="font-size:.85rem;background:var(--bg);border-radius:8px;padding:8px 12px;margin-bottom:16px;color:var(--txt)">📝 ' + escH(trip.note) + '</div>';
   html += '<div class="divider"></div>';
 
   // Seats visual
@@ -878,7 +881,7 @@ function openTrip(tripId) {
     html += '<div style="margin-bottom:12px"><div style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Pasajeros</div>';
     approvedPassengers.forEach(function(r) {
       html += '<div style="font-size:.9rem;padding:4px 0">';
-      html += (r.requesterId === currentUser.id ? '👤 Tú' : '👤 ' + r.requesterName + ' · P.' + r.requesterParcela);
+      html += (r.requesterId === currentUser.id ? '👤 Tú' : '👤 ' + escH(r.requesterName) + ' · P.' + escH(r.requesterParcela));
       html += '</div>';
     });
     html += '</div>';
@@ -897,7 +900,7 @@ function openTrip(tripId) {
       var statusColors = { solicitado: '#92400e', aprobado: '#065f46', rechazado: '#991b1b' };
       html += '<div style="text-align:center;padding:16px;font-weight:700;color:' + (statusColors[myReq.status]||'var(--muted)') + '">' + (statusLabels[myReq.status] || myReq.status) + '</div>';
       if (myReq.status === 'rechazado' && myReq.driverComment) {
-        html += '<div style="font-size:.82rem;color:var(--muted);text-align:center">Comentario: ' + myReq.driverComment + '</div>';
+        html += '<div style="font-size:.82rem;color:var(--muted);text-align:center">Comentario: ' + escH(myReq.driverComment) + '</div>';
       }
     }
   }
@@ -922,6 +925,7 @@ async function confirmRequest() {
   var tripId = pendingRequestTripId;
   if (!tripId) return;
   var note = document.getElementById('request-note').value.trim();
+  if (note.length > 300) { toast('La nota no puede superar 300 caracteres'); return; }
   var btn = document.getElementById('request-submit-btn');
   btn.disabled = true;
   closeModal('request');
@@ -1112,8 +1116,10 @@ async function doPublish() {
   if (!time) { err.textContent = 'Elige una hora'; err.classList.add('on'); return; }
   if (!publishState.seats) { err.textContent = 'Selecciona los cupos disponibles'; err.classList.add('on'); return; }
   if (date < toDateStr(new Date())) { err.textContent = 'La fecha debe ser hoy o en el futuro'; err.classList.add('on'); return; }
+  if (pueblo.length > 100) { err.textContent = 'Punto de encuentro demasiado largo'; err.classList.add('on'); return; }
 
   var note = (document.getElementById('pub-note').value || '').trim();
+  if (note.length > 500) { err.textContent = 'La nota no puede superar 500 caracteres'; err.classList.add('on'); return; }
   var pubBtn = document.querySelector('#publish-content .btn-p');
   if (pubBtn) { pubBtn.textContent = 'Publicando…'; pubBtn.disabled = true; }
   var res = await sb.from('trips').insert({
@@ -1230,12 +1236,12 @@ function renderMyData(myTrips, myReqs) {
     html += '<div class="empty"><div class="empty-icon">🚗</div>No tienes viajes publicados próximos<br><small style="font-size:.8rem;margin-top:6px;display:block">Ve a Publicar para agregar uno</small></div>';
   } else {
     upcoming.forEach(function(t) {
-      var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
+      var route = t.direction === 'salida' ? 'PBI → ' + escH(t.puebloPoint) : escH(t.puebloPoint) + ' → PBI';
       var pending = t.requests ? t.requests.filter(function(r){ return r.status === 'solicitado'; }) : [];
       html += '<div class="card">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start">';
-      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div><div style="font-size:.85rem;color:var(--muted)">' + route + ' · ' + t.totalSeats + ' cupos</div>';
-      if (t.note) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:2px">📝 ' + t.note + '</div>';
+      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + escH(t.time) + '</div><div style="font-size:.85rem;color:var(--muted)">' + route + ' · ' + t.totalSeats + ' cupos</div>';
+      if (t.note) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:2px">📝 ' + escH(t.note) + '</div>';
       html += '</div>';
       html += '<div style="display:flex;gap:6px;align-items:center">';
       if (pending.length > 0) html += '<span class="tc-badge b-soli">' + pending.length + ' pendiente' + (pending.length>1?'s':'') + '</span>';
@@ -1246,9 +1252,9 @@ function renderMyData(myTrips, myReqs) {
         html += '<div class="divider"></div>';
         t.requests.forEach(function(r) {
           html += '<div class="req-item"><div style="display:flex;justify-content:space-between;align-items:center">';
-          html += '<div><div style="font-size:.9rem;font-weight:600">' + r.requesterName + ' · P.' + r.requesterParcela + '</div>';
-          html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + r.status + '</span>';
-          if (r.note) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:3px">💬 ' + r.note + '</div>';
+          html += '<div><div style="font-size:.9rem;font-weight:600">' + escH(r.requesterName) + ' · P.' + escH(r.requesterParcela) + '</div>';
+          html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + escH(r.status) + '</span>';
+          if (r.note) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:3px">💬 ' + escH(r.note) + '</div>';
           html += '</div>';
           if (r.status === 'solicitado') {
             html += '<div style="display:flex;gap:6px">';
@@ -1279,15 +1285,15 @@ function renderMyData(myTrips, myReqs) {
       if (t) {
         var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
         html += '<div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div>';
-        html += '<div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">' + route + ' con ' + t.driverName + '</div>';
+        html += '<div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">' + route + ' con ' + escH(t.driverName) + '</div>';
       }
       html += '<div style="display:flex;align-items:center;justify-content:space-between">';
-      html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + r.status + '</span>';
+      html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + escH(r.status) + '</span>';
       if ((r.status === 'solicitado' || r.status === 'aprobado') && t && t.date >= today) {
         html += '<button class="btn btn-d btn-sm" onclick="doCancelRequest(\'' + r.id + '\')">Cancelar</button>';
       }
       html += '</div>';
-      if (r.status === 'rechazado' && r.driverComment) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:6px">"' + r.driverComment + '"</div>';
+      if (r.status === 'rechazado' && r.driverComment) html += '<div style="font-size:.8rem;color:var(--muted);margin-top:6px">"' + escH(r.driverComment) + '"</div>';
       html += '</div>';
     });
   }
@@ -1304,11 +1310,11 @@ function renderMyData(myTrips, myReqs) {
     html += '<div class="section-title">Historial — últimas 4 semanas</div>';
 
     pastTrips.forEach(function(t) {
-      var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
+      var route = t.direction === 'salida' ? 'PBI → ' + escH(t.puebloPoint) : escH(t.puebloPoint) + ' → PBI';
       var pax = t.requests ? t.requests.filter(function(r){ return r.status === 'aprobado'; }).length : 0;
       html += '<div class="card" style="opacity:.75">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div>';
+      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + escH(t.time) + '</div>';
       html += '<div style="font-size:.85rem;color:var(--muted)">' + route + ' · ' + pax + ' pasajero' + (pax !== 1 ? 's' : '') + '</div></div>';
       html += '<span class="tc-badge b-past">Conductor</span>';
       html += '</div></div>';
@@ -1317,12 +1323,12 @@ function renderMyData(myTrips, myReqs) {
     pastReqs.forEach(function(r) {
       var t = r.trip;
       if (!t) return;
-      var route = t.direction === 'salida' ? 'PBI → ' + t.puebloPoint : t.puebloPoint + ' → PBI';
+      var route = t.direction === 'salida' ? 'PBI → ' + escH(t.puebloPoint) : escH(t.puebloPoint) + ' → PBI';
       html += '<div class="card" style="opacity:.75">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + t.time + '</div>';
-      html += '<div style="font-size:.85rem;color:var(--muted)">' + route + ' con ' + t.driverName + '</div></div>';
-      html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + r.status + '</span>';
+      html += '<div><div style="font-weight:700">' + fmtDate(t.date) + ' · ' + escH(t.time) + '</div>';
+      html += '<div style="font-size:.85rem;color:var(--muted)">' + route + ' con ' + escH(t.driverName) + '</div></div>';
+      html += '<span class="tc-badge b-' + r.status.substr(0,4) + '">' + escH(r.status) + '</span>';
       html += '</div></div>';
     });
   }
@@ -1412,7 +1418,7 @@ function renderBalance(balances) {
     var absAmt = Math.abs(b.amount);
     var fmtAmt = '$' + absAmt.toLocaleString('es-CL');
     html += '<div class="bal-row">';
-    html += '<div><div class="bal-name">' + b.name + '</div><div class="bal-sub">Parcela ' + b.parcela + '</div>';
+    html += '<div><div class="bal-name">' + escH(b.name) + '</div><div class="bal-sub">Parcela ' + escH(b.parcela) + '</div>';
     html += '<div style="font-size:.75rem;color:var(--muted);margin-top:2px">' + (iOwe ? 'Les debes' : 'Te deben') + '</div></div>';
     html += '<div style="display:flex;align-items:center;gap:12px">';
     html += '<div class="bal-amt ' + (iOwe ? 'bal-neg' : 'bal-pos') + '">' + fmtAmt + '</div>';
@@ -1437,15 +1443,10 @@ async function confirmPay() {
   var amount = parseInt(document.getElementById('pay-amount').value);
   if (!amount || amount <= 0) { toast('Ingresa un monto válido'); return; }
   var d = pendingPayData;
-  // Solo el acreedor (quien recibe) puede registrar el pago
   if (d.iOwe) { toast('Solo quien recibe el pago puede marcarlo'); return; }
-  var res = await sb.from('payments').insert({
-    from_user_id: d.otherId,
-    to_user_id:   currentUser.id,
-    amount:       amount
-  });
+  var res = await sb.rpc('add_payment', { p_from_user_id: d.otherId, p_amount: amount });
   closeModal('pay');
-  if (res.error) { toast('Error: ' + res.error.message); return; }
+  if (res.error || (res.data && res.data.error)) { toast('Error: ' + (res.error ? res.error.message : res.data.error)); return; }
   toast('✅ Pago registrado');
   balanceData = null;
   loadBalance();
@@ -1456,9 +1457,9 @@ function renderProfile() {
   document.getElementById('profile-content').innerHTML =
     '<div class="card">' +
     '<div style="font-size:2.5rem;text-align:center;margin-bottom:12px">👤</div>' +
-    '<div style="text-align:center;font-size:1.15rem;font-weight:800;margin-bottom:4px">' + currentUser.name + '</div>' +
-    '<div style="text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:4px">' + currentUser.email + '</div>' +
-    '<div style="text-align:center;font-size:.9rem;font-weight:600;color:var(--p);margin-bottom:20px">Parcela ' + currentUser.parcela + '</div>' +
+    '<div style="text-align:center;font-size:1.15rem;font-weight:800;margin-bottom:4px">' + escH(currentUser.name) + '</div>' +
+    '<div style="text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:4px">' + escH(currentUser.email) + '</div>' +
+    '<div style="text-align:center;font-size:.9rem;font-weight:600;color:var(--p);margin-bottom:20px">Parcela ' + escH(currentUser.parcela) + '</div>' +
     '<button class="btn btn-o" onclick="logout()">Cerrar sesión</button>' +
     '</div>';
 }
