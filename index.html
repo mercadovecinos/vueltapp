@@ -315,6 +315,19 @@ input:focus,select:focus,textarea:focus{border-color:var(--p)}
   </div>
 </div>
 
+<!-- ── Confirm Modal ── -->
+<div class="overlay" id="modal-confirm">
+  <div class="modal">
+    <div class="mhandle"></div>
+    <div class="mtitle" id="confirm-title"></div>
+    <p id="confirm-msg" style="font-size:.88rem;color:var(--muted);margin-bottom:20px"></p>
+    <div class="row-btns">
+      <button class="btn btn-g btn-sm" onclick="closeModal('confirm')">Cancelar</button>
+      <button class="btn btn-d btn-sm" id="confirm-ok-btn">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Pay Modal ── -->
 <div class="overlay" id="modal-pay" onclick="if(event.target===this)closeModal('pay')">
   <div class="modal">
@@ -396,6 +409,15 @@ function getCached(k) {
   return null;
 }
 function setCache(k, d) { try { localStorage.setItem(k, JSON.stringify({ts:Date.now(),d:d})); } catch(e) {} }
+
+// ── Confirm modal (reemplaza window.confirm bloqueado por Chrome) ──
+function showConfirm(title, msg, onOk) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-msg').textContent = msg;
+  var btn = document.getElementById('confirm-ok-btn');
+  btn.onclick = function() { closeModal('confirm'); onOk(); };
+  openModal('confirm');
+}
 
 // ── Escape HTML (XSS prevention) ──
 function escH(str) { var d = document.createElement('div'); d.textContent = str == null ? '' : String(str); return d.innerHTML; }
@@ -1361,8 +1383,12 @@ function confirmReject() {
   pendingRejectId = null;
 }
 
-async function doCancelTrip(tripId) {
-  if (!confirm('¿Cancelar este viaje? Se notificará a todos los pasajeros.')) return;
+function doCancelTrip(tripId) {
+  showConfirm('Cancelar viaje', '¿Cancelar este viaje? Se notificará a todos los pasajeros.', function() {
+    _doCancelTrip(tripId);
+  });
+}
+async function _doCancelTrip(tripId) {
   toast('Cancelando…');
   // Cancelar solicitudes activas primero (trigger enviará emails)
   var reqRes = await sb.from('requests')
@@ -1378,8 +1404,12 @@ async function doCancelTrip(tripId) {
   loadMyData();
 }
 
-async function doCancelRequest(requestId) {
-  if (!confirm('¿Cancelar tu solicitud?')) return;
+function doCancelRequest(requestId) {
+  showConfirm('Cancelar solicitud', '¿Cancelar tu solicitud de cupo?', function() {
+    _doCancelRequest(requestId);
+  });
+}
+async function _doCancelRequest(requestId) {
   toast('Cancelando…');
   var res = await sb.from('requests')
     .update({ status: 'cancelado', cancel_reason: 'by_passenger', updated_at: new Date().toISOString() })
